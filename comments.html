@@ -17,70 +17,90 @@
   <header>Live Comments <span id="scope" class="muted"></span></header>
   <div id="wrap">Loading…</div>
 
-  <script>
-    // Replace with YOUR published CSV URL:
-    const CSV_URL = "https://docs.google.com/spreadsheets/d/1Lalzix47PAxyqgWM2fjGd96WrhYhOWc3Qzkz2uYcMmw/edit?resourcekey=&gid=744008182#gid=744008182";
+ <script>
+  const CSV_URL = "https://docs.google.com/spreadsheets/d/1Lalzix47PAxyqgWM2fjGd96WrhYhOWc3Qzkz2uYcMmw/edit?resourcekey=&gid=744008182#gid=744008182"; // keep yours
 
-    // Optional artwork filter via ?art=art-001
-    const params = new URLSearchParams(location.search);
-    const ART = params.get("art");
-    if (ART) document.getElementById("scope").textContent = `( ${ART} )`;
+  const params = new URLSearchParams(location.search);
+  const ART = params.get("art");
+  if (ART) document.getElementById("scope").textContent = `( ${ART} )`;
 
-    function parseCSV(text) {
-      const rows = []; let cur='', row=[], inQ=false;
-      for (let i=0;i<text.length;i++){
-        const c=text[i], n=text[i+1];
-        if (c==='\"'){ if(inQ && n==='\"'){cur+='\"'; i++;} else inQ=!inQ; }
-        else if (c===',' && !inQ){ row.push(cur); cur=''; }
-        else if ((c=== '\n' || c=== '\r') && !inQ){ if(cur.length||row.length){row.push(cur); rows.push(row);} cur=''; row=[]; }
-        else { cur+=c; }
-      }
-      if (cur.length||row.length){ row.push(cur); rows.push(row); }
-      return rows;
+  function parseCSV(text){
+    const rows=[]; let cur='',row=[],inQ=false;
+    for(let i=0;i<text.length;i++){
+      const c=text[i],n=text[i+1];
+      if(c==='\"'){ if(inQ && n==='\"'){cur+='\"'; i++;} else inQ=!inQ; }
+      else if(c===',' && !inQ){ row.push(cur); cur=''; }
+      else if((c==='\n'||c==='\r') && !inQ){ if(cur.length||row.length){row.push(cur); rows.push(row);} cur=''; row=[]; }
+      else { cur+=c; }
     }
-    function escapeHtml(s){return (s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+    if(cur.length||row.length){ row.push(cur); rows.push(row); }
+    return rows;
+  }
 
-    async function load() {
-      const wrap = document.getElementById("wrap");
-      try {
-        const res = await fetch(CSV_URL + "&_ts=" + Date.now());
-        const csv = await res.text();
-        const rows = parseCSV(csv);
-        if (!rows.length) { wrap.textContent = "No data."; return; }
-        const header = rows[0];
-        const iTs = header.findIndex(h => /timestamp/i.test(h));
-        const iComment = header.findIndex(h => /comment/i.test(h));
-        const iArt = header.findIndex(h => /art(work)?\s*id/i.test(h));
-        const iName = header.findIndex(h => /name/i.test(h));
-
-        let items = rows.slice(1).map(r => ({
-          ts: iTs >= 0 ? r[iTs] : "",
-          text: iComment >= 0 ? r[iComment] : "",
-          art: iArt >= 0 ? r[iArt] : "",
-          name: iName >= 0 ? r[iName] : ""
-        }));
-
-        if (ART && iArt >= 0) items = items.filter(x => (x.art||"").trim() === ART);
-        items.reverse();
-
-        wrap.innerHTML = items.length
-          ? items.map(x => `
-              <div class="item">
-                ${escapeHtml(x.text)}
-                <div class="ts">
-                  ${escapeHtml(x.ts)}${x.name?` • ${escapeHtml(x.name)}`:""}${x.art?` • ${escapeHtml(x.art)}`:""}
-                </div>
-              </div>
-            `).join("")
-          : `<div class="muted">No comments yet.</div>`;
-      } catch (e) {
-        wrap.innerHTML = `<div class="muted">Could not load comments. Please try again.</div>`;
-        console.error(e);
-      }
+  function hfind(header, patterns){
+    // find first header whose text matches ANY pattern (case-insensitive)
+    const lower = header.map(h=>String(h||'').toLowerCase().trim());
+    for(const p of patterns){
+      const idx = lower.findIndex(h => h === p || h.includes(p));
+      if(idx !== -1) return idx;
     }
+    return -1;
+  }
 
-    load();
-    setInterval(load, 20000);
-  </script>
+  function escapeHtml(s){return (s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+
+  async function load(){
+    const wrap = document.getElementById("wrap");
+    try{
+      const res = await fetch(CSV_URL + "&_ts=" + Date.now());
+      const csv = await res.text();
+      const rows = parseCSV(csv);
+      if(!rows.length){ wrap.textContent = "No data."; return; }
+
+      const header = rows[0];
+
+      const iTs   = hfind(header, ["timestamp", "date", "time"]);
+      const iName = hfind(header, ["name", "enter your name", "nickname"]);
+      const iArt  = hfind(header, ["artwork id", "art id", "art"]);
+      const iCom  = hfind(header, [
+        "comment",
+        "what do you feel about the art",     // <-- your label
+        "your comment", "feedback", "message"
+      ]);
+
+      let items = rows.slice(1).map(r => ({
+        ts:   iTs  >=0 ? r[iTs]  : "",
+        name: iName>=0 ? r[iName]: "",
+        art:  iArt >=0 ? r[iArt] : "",
+        text: iCom >=0 ? r[iCom] : ""
+      }));
+
+      // Drop completely empty rows
+      items = items.filter(x => x.ts || x.name || x.art || x.text);
+
+      // Filter by artwork if provided
+      if(ART && iArt>=0) items = items.filter(x => (x.art||"").trim() === ART);
+
+      // Newest first
+      items.reverse();
+
+      wrap.innerHTML = items.length
+        ? items.map(x => `
+          <div class="item">
+            ${escapeHtml(x.text)}
+            <div class="ts">${escapeHtml(x.ts)}${x.name?` • ${escapeHtml(x.name)}`:""}${x.art?` • ${escapeHtml(x.art)}`:""}</div>
+          </div>
+        `).join("")
+        : `<div class="muted">No comments yet.</div>`;
+    }catch(e){
+      wrap.innerHTML = `<div class="muted">Could not load comments. Please try again.</div>`;
+      console.error(e);
+    }
+  }
+
+  load();
+  setInterval(load, 20000);
+</script>
+
 </body>
 </html>
