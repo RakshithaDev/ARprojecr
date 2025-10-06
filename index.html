@@ -13,27 +13,28 @@
     .btn{padding:10px 14px;border-radius:12px;border:0;background:#42a5f5;color:#000;font-weight:700;cursor:pointer}
     .btn.secondary{background:#30343a;color:#f2f6ff}
     #hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;padding:6px 10px;border-radius:999px;font-size:14px}
-    .hud{position:fixed;top:12px;left:12px;background:rgba(0,0,0,.55);color:#fff;padding:6px 10px;border-radius:10px;font-size:12px;white-space:pre-line;max-width:70ch}
+    dialog#formModal{border:0;border-radius:16px;max-width:min(900px,92vw);width:92vw;height:min(80vh,700px);padding:0;overflow:hidden}
+    dialog::backdrop{background:rgba(0,0,0,.55)}
+    .modal-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#0f1116;color:#fff}
+    .modal-body{height:calc(100% - 48px)}
+    .modal-body iframe{width:100%;height:100%;border:0}
   </style>
 </head>
 <body>
-  <!-- ===== CONFIG: set these 3 lines ===== -->
+  <!-- ---- CONFIG: set these ---- -->
   <script>
-    // If you keep the spaced filename, use the URL-encoded path:
-    const TARGET_PATH   = "./targets%20(3).mind"; // better: ./assets/art.mind
-    const ADD_URL       = "https://docs.google.com/forms/d/e/1FAIpQLSeqRZbSpTWiVs9z6BzntH9ZFGW2LR_9BHIUM7bvAtvZdcdmPA/viewform?usp=sharing&ouid=106135578680070943218";
-    const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1aMxe4t5VoM59TqpzeFiIlgVOGhA84HcZkQ_m4eq6OM0/edit?usp=sharing";
-    const MAX_BUBBLES   = 10;
-    const HINT_COMMENT  = "comment", HINT_NAME="name", HINT_TIME="time";
+    const TARGET_PATH   = "./targets%20(3).mind";                   // your .mind file
+    const ADD_URL       = "https://docs.google.com/forms/d/e/1FAIpQLSeqRZbSpTWiVs9z6BzntH9ZFGW2LR_9BHIUM7bvAtvZdcdmPA/viewform?usp=sharing&ouid=106135578680070943218"; // your Google Form
+    const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1aMxe4t5VoM59TqpzeFiIlgVOGhA84HcZkQ_m4eq6OM0/edit?usp=sharing"; // published CSV
+    const MAX_BUBBLES   = 10; // how many comments to show around the target
+    const COMMENT_HEADER_HINT = "comment", NAME_HEADER_HINT = "name", TIME_HEADER_HINT = "time";
   </script>
 
   <div id="hint">Point your camera at the artwork</div>
-  <div id="hud" class="hud">Loading…</div>
 
-  <!-- AR scene -->
   <a-scene id="scene"
-    mindar-image="imageTargetSrc: ./targets%20(3).mind"
-    renderer="colorManagement:true, physicallyCorrectLights:true"
+    mindar-image="imageTargetSrc: ./assets/art.mind"
+    renderer="colorManagement: true, physicallyCorrectLights: true"
     vr-mode-ui="enabled:false"
     device-orientation-permission-ui="enabled:true"
     embedded loading-screen="enabled:false">
@@ -41,124 +42,109 @@
     <a-entity id="anchor" mindar-image-target="targetIndex: 0"></a-entity>
   </a-scene>
 
-  <!-- Bottom UI -->
   <div id="ui">
     <div class="row">
-      <!-- Opens form in-page if allowed, otherwise new tab -->
       <button id="btn-form" class="btn">💬 Share your thoughts</button>
-      <a id="link-form" class="btn secondary" href="#" target="_blank" rel="noopener" style="display:none">Open form in new tab</a>
       <button id="btn-refresh" class="btn secondary">↻ Refresh comments</button>
       <span id="status" style="opacity:.85">Waiting for target…</span>
     </div>
   </div>
 
-  <!-- Simple modal for the form (fallback to new tab if blocked) -->
-  <dialog id="formModal" style="border:0;border-radius:16px;max-width:min(900px,92vw);width:92vw;height:min(80vh,700px);padding:0;overflow:hidden">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#0f1116;color:#fff">
+  <dialog id="formModal">
+    <div class="modal-head">
       <strong>Share your thoughts</strong>
       <button id="btn-close" class="btn secondary">Close</button>
     </div>
-    <div style="height:calc(100% - 48px)"><iframe id="formFrame" title="Comment Form" src="about:blank" loading="lazy" style="width:100%;height:100%;border:0"></iframe></div>
+    <div class="modal-body">
+      <iframe id="formFrame" title="Comment Form" src="about:blank" loading="lazy"></iframe>
+    </div>
   </dialog>
 
   <script>
-    // Apply the configured target path
+    // apply config
     document.getElementById("scene").setAttribute("mindar-image", `imageTargetSrc: ${TARGET_PATH}`);
 
-    const hud = document.getElementById('hud');
     const statusEl = document.getElementById('status');
     const hintEl   = document.getElementById('hint');
     const anchor   = document.getElementById('anchor');
     const modal    = document.getElementById('formModal');
     const formFrame= document.getElementById('formFrame');
-    const linkForm = document.getElementById('link-form');
 
-    // --- Button wiring
     document.getElementById('btn-form').onclick = () => {
-      if (!ADD_URL.startsWith("http")) return alert("Set ADD_URL (Google Form) at the top.");
-      try { formFrame.src = ADD_URL; modal.showModal(); }
-      catch { window.open(ADD_URL, "_blank"); }
+      if (ADD_URL.startsWith("http")) { formFrame.src = ADD_URL; modal.showModal(); }
+      else alert("Set ADD_URL to your Google Form link.");
     };
     document.getElementById('btn-close').onclick = () => modal.close();
     document.getElementById('btn-refresh').onclick = () => fetchAndRender();
-    // Always provide a new-tab link, in case dialogs/iframes are blocked
-    if (ADD_URL.startsWith("http")) { linkForm.href = ADD_URL; linkForm.style.display = 'inline-block'; }
 
-    // --- CSV fetch + parse
+    // ----- fetch comments from published CSV -----
     function parseCSV(text){
-      const rows=[]; let cell="", row=[], q=false;
+      const rows=[], row=[], push=()=>{rows.push(row.splice(0))}; let cell="", q=false;
       for(let i=0;i<text.length;i++){const c=text[i],n=text[i+1];
-        if(q){ if(c=='"'&&n=='"'){cell+='"';i++;} else if(c=='"'){q=false;} else cell+=c; }
-        else { if(c=='"'){q=true;} else if(c==','){row.push(cell);cell="";}
-               else if(c=='\n'){row.push(cell); rows.push(row); row=[]; cell="";}
-               else if(c!='\r'){cell+=c;} }
-      } if(cell.length||row.length){row.push(cell); rows.push(row);}
-      return rows;
-    }
-    const findCol = (hdrs,hint)=> hdrs.findIndex(h=> (h||"").toLowerCase().includes(hint));
-
-    async function fetchComments(){
-      if (!SHEET_CSV_URL.startsWith("http")) throw new Error("Set SHEET_CSV_URL to your Published Sheet CSV.");
-      const res = await fetch(SHEET_CSV_URL, {cache:"no-store"});
-      if (!res.ok) throw new Error(`CSV HTTP ${res.status}`);
-      const text = await res.text();
-      const rows = parseCSV(text);
-      if (!rows.length) return [];
-      const headers = rows[0].map(h=> (h||"").trim());
-      const ci = findCol(headers, HINT_COMMENT), ni = findCol(headers, HINT_NAME), ti = findCol(headers, HINT_TIME);
-      const out=[];
-      for (let i=1;i<rows.length;i++){
-        const r = rows[i]; const comment = (ci>=0 ? r[ci] : r[0] || "").trim();
-        if (!comment) continue;
-        out.push({ text: comment, name: ni>=0?(r[ni]||"").trim():"", time: ti>=0?(r[ti]||"").trim():"" });
+        if(q){ if(c=='"'&&n=='"'){cell+='"'; i++;} else if(c=='"'){q=false;} else cell+=c; }
+        else { if(c=='"') q=true; else if(c==','){row.push(cell);cell="";}
+               else if(c=='\n'){row.push(cell);cell=""; push();} else if(c!='\r'){cell+=c;} }
       }
-      return out.reverse(); // latest first
+      if(cell||row.length){row.push(cell); push();} return rows;
+    }
+    const idx = (headers,h)=>headers.findIndex(x=> (x||"").toLowerCase().includes(h.toLowerCase()));
+
+    async function getComments(){
+      if(!SHEET_CSV_URL.startsWith("http")) throw new Error("Set SHEET_CSV_URL to your CSV link.");
+      const res = await fetch(SHEET_CSV_URL, {cache:"no-store"});
+      const text = await res.text();
+      const rows = parseCSV(text); if(!rows.length) return [];
+      const headers = rows[0].map(h=> (h||"").trim());
+      const ci = idx(headers, COMMENT_HEADER_HINT), ni = idx(headers, NAME_HEADER_HINT), ti = idx(headers, TIME_HEADER_HINT);
+      const items=[];
+      for(let i=1;i<rows.length;i++){
+        const r=rows[i]; const t=(ci>=0?r[ci]:r[0]||"").trim(); if(!t) continue;
+        items.push({ text:t, name:ni>=0?(r[ni]||"").trim():"", time:ti>=0?(r[ti]||"").trim():"" });
+      }
+      return items.reverse(); // latest first
     }
 
     function clearBubbles(){ Array.from(anchor.children).forEach(ch=>anchor.removeChild(ch)); }
     const trunc = (s,n)=> s && s.length>n ? s.slice(0,n-1)+"…" : (s||"");
-    const pos = (ang,r,j=0)=> ({ x:Math.cos(ang)*r+(Math.random()-0.5)*j, y:Math.sin(ang)*r+(Math.random()-0.5)*j*0.6, z:0.02 });
 
-    function addBubble(item, p){
+    function placeBubble(item, pos){
       const g = document.createElement("a-entity");
-      g.setAttribute("position", `${p.x} ${p.y} ${p.z}`);
+      g.setAttribute("position", `${pos.x} ${pos.y} ${pos.z}`);
+
       const card = document.createElement("a-plane");
-      card.setAttribute("width", 0.68); card.setAttribute("height", 0.22);
+      card.setAttribute("width", 0.68);
+      card.setAttribute("height", 0.22);
       card.setAttribute("material","color:#ffb773;opacity:.92;transparent:true;side:double");
+      g.appendChild(card);
+
       const txt = document.createElement("a-text");
-      const who = item.name?` — ${item.name}`:""; const when=item.time?` · ${item.time}`:"";
-      txt.setAttribute("value", trunc(item.text,70)+who+when);
-      txt.setAttribute("align","center"); txt.setAttribute("width",1.2); txt.setAttribute("color","#222"); txt.setAttribute("position","0 0 0.01");
-      g.appendChild(card); g.appendChild(txt); anchor.appendChild(g);
+      const who = item.name ? ` — ${item.name}` : "";
+      const when = item.time ? ` · ${item.time}` : "";
+      txt.setAttribute("value", trunc(item.text,70) + who + when);
+      txt.setAttribute("align","center");
+      txt.setAttribute("width", 1.2);
+      txt.setAttribute("color","#222");
+      txt.setAttribute("position","0 0 0.01");
+      g.appendChild(txt);
+
+      anchor.appendChild(g);
     }
+    function pos(angle, r, j=0){ return { x:Math.cos(angle)*r + (Math.random()-0.5)*j, y:Math.sin(angle)*r + (Math.random()-0.5)*j*0.6, z:0.02 }; }
 
     async function fetchAndRender(){
       try{
-        hud.textContent = "Fetching comments…";
-        const all = await fetchComments();
-        clearBubbles();
-        if (!all.length){ hud.textContent = "No comments yet. Use 'Share your thoughts' to add one."; return; }
+        statusEl.textContent = "Loading comments…";
+        const all = await getComments();
         const items = all.slice(0, MAX_BUBBLES);
+        clearBubbles();
         const R=0.45, J=0.08;
-        items.forEach((it,i)=> addBubble(it, pos(i/items.length*2*Math.PI, R, J)) );
-        hud.textContent = `Showing ${items.length} comment${items.length===1?"":"s"}.`;
-      } catch(e){
-        console.error(e);
-        hud.textContent = "Could not load comments (check CSV link/publish to web).";
-      }
+        items.forEach((it,i)=> placeBubble(it, pos(i/items.length*2*Math.PI, R, J)) );
+        statusEl.textContent = `Showing ${items.length} comment${items.length===1?"":"s"}.`;
+      }catch(e){ console.error(e); statusEl.textContent = "Could not load comments (CSV)."; }
     }
 
-    // AR events
-    anchor.addEventListener('targetFound', ()=>{ hintEl.style.display='none'; statusEl.textContent="Target found."; fetchAndRender(); });
+    anchor.addEventListener('targetFound', ()=>{ hintEl.style.display='none'; statusEl.textContent="Target found. Loading comments…"; fetchAndRender(); });
     anchor.addEventListener('targetLost',  ()=>{ hintEl.style.display='block'; statusEl.textContent="Waiting for target…"; });
-
-    // Quick sanity check on startup
-    (async () => {
-      try{
-        const [mindRes] = await Promise.all([ fetch(TARGET_PATH, {cache:"no-store"}) ]);
-        hud.textContent = mindRes.ok ? "Target file ✓ — point at the artwork." : `Target file ✗ (${mindRes.status})`;
-      }catch{ hud.textContent = "Target file check failed."; }
-    })();
   </script>
 </body>
 </html>
