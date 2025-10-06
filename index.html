@@ -10,9 +10,13 @@
 
 <style>
   html,body{margin:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto}
+  /* hide A-Frame VR/AR buttons */
   .a-enter-vr,.a-enter-vr-button,.a-enter-ar,.a-enter-ar-button{display:none!important}
+
   #hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;padding:6px 10px;border-radius:999px;z-index:3}
   #hud{position:fixed;top:12px;left:12px;background:rgba(0,0,0,.55);color:#fff;padding:6px 10px;border-radius:10px;font-size:12px;z-index:3}
+
+  /* bottom bar (hidden until targetFound) */
   #ui{position:fixed;left:0;right:0;bottom:0;padding:12px;background:rgba(0,0,0,.55);color:#fff;
       backdrop-filter:blur(6px);transform:translateY(110%);transition:.25s;z-index:3}
   #ui.show{transform:translateY(0)}
@@ -25,7 +29,8 @@
 
 <!-- ===== CONFIG — change these 3 lines ===== -->
 <script>
-  // Better: rename to ./assets/art.mind and set that here.
+  // If your .mind file is "targets (3).mind" in repo root, keep the %20.
+  // Better: rename to ./assets/art.mind and set TARGET_PATH to "./assets/art.mind"
   const TARGET_PATH   = "./targets%20(3).mind";
   const ADD_URL       = "https://docs.google.com/forms/d/e/1FAIpQLSeqRZbSpTWiVs9z6BzntH9ZFGW2LR_9BHIUM7bvAtvZdcdmPA/viewform";
   const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQQKOqH_3Yl5Vpd-fPqtGgcHgLmq1dO6Pmnc9HuQ1LI2nBZm75Ms8mp1KQHcSQHp087pa7BLkY7BB8p/pub?output=csv";
@@ -65,12 +70,19 @@
 
 <script>
   /* apply target from CONFIG */
-  document.getElementById("scene").setAttribute("mindar-image", `imageTargetSrc: ${TARGET_PATH}`);
+  const scene = document.getElementById("scene");
+  scene.setAttribute("mindar-image", `imageTargetSrc: ${TARGET_PATH}`);
 
-  const hud=document.getElementById('hud'), ui=document.getElementById('ui');
-  const statusEl=document.getElementById('status'), hint=document.getElementById('hint');
-  const anchor=document.getElementById('anchor'), modal=document.getElementById('formModal');
+  const hud=document.getElementById('hud');
+  const ui=document.getElementById('ui');
+  const statusEl=document.getElementById('status');
+  const hint=document.getElementById('hint');
+  const anchor=document.getElementById('anchor');
+  const modal=document.getElementById('formModal');
   const formFrame=document.getElementById('formFrame');
+
+  // Track target state so we can re-show the bottom bar after closing the form
+  let hadTarget = false;
 
   // ===== CSV parsing + header matching =====
   function parseCSV(t){
@@ -90,8 +102,6 @@
 
   // Your sheet headers: "Timestamp", "What's on your mind?"
   const COMMENT_HINTS = ["what's on your mind?","whats on your mind","mind"];
-  const NAME_HINTS    = []; // no name column
-  const TIME_HINTS    = ["timestamp","time","date"];
 
   async function fetchRows(){
     const res = await fetch(SHEET_CSV_URL,{cache:"no-store"});
@@ -103,15 +113,13 @@
     if(!rows.length) return [];
     const headers = rows[0];
     const ci = findCol(headers, COMMENT_HINTS);
-    const ni = findCol(headers, NAME_HINTS); // unused but kept for future
-    // const ti = findCol(headers, TIME_HINTS); // we don't show time anymore
 
     const items=[];
     for(let i=1;i<rows.length;i++){
       const r = rows[i] || [];
       const text = (ci>=0 ? r[ci] : "").trim();
       if(!text) continue;
-      items.push({ text });
+      items.push({ text }); // comment only (no timestamp)
     }
     return items.reverse(); // newest first
   }
@@ -119,7 +127,7 @@
     try{ const rows = await fetchRows(); return Math.max(rows.length-1, 0); } catch{ return 0; }
   }
 
-  // ===== Poll for a new submission, then close form + reset to page 1 =====
+  // ===== Poll for a new submission (detects Google Form submit) =====
   function pollForNewSubmission(prevCount, timeoutMs, intervalMs, onNew){
     let aborted = false;
     (async ()=>{
@@ -129,28 +137,11 @@
         try{
           const count = await getRowCountSafe();
           if (count > prevCount){ onNew(); return; }
-        }catch{}
+        }catch{/* ignore and retry */}
       }
     })();
     return () => { aborted = true; };
   }
-
-  // --- open/close Google Form
-  let pollAbort = null;
-  document.getElementById('btn-form').onclick = async () => {
-    if(!ADD_URL.startsWith("http")) return alert("Set ADD_URL to your Google Form.");
-    try{ formFrame.src = ADD_URL; modal.showModal(); }catch{ window.open(ADD_URL,"_blank"); }
-    const prev = await getRowCountSafe();
-    pollAbort = pollForNewSubmission(prev, 45000, 2500, async () => {
-      if (modal.open) modal.close();      // auto close
-      await fetchAndRender(true);         // reset to page 1 (latest 3)
-      statusEl.textContent = "Thanks! Your comment was added.";
-    });
-  };
-  document.getElementById('btn-close').onclick = () => {
-    if (pollAbort) { pollAbort(); pollAbort = null; }
-    modal.close();
-  };
 
   // ===== AR bubbles & paging (3 at a time) =====
   function clearBubbles(){ Array.from(anchor.children).forEach(ch=>anchor.removeChild(ch)); }
@@ -161,8 +152,8 @@
     card.setAttribute("width",.68); card.setAttribute("height",.22);
     card.setAttribute("material","color:#ffb773;opacity:.92;transparent:true;side:double");
     const t=document.createElement("a-text");
-    const label = trunc(item.text,80);   // ← COMMENT ONLY (no timestamp)
-    t.setAttribute("value",label); t.setAttribute("align","center"); t.setAttribute("width",1.2); t.setAttribute("color","#222"); t.setAttribute("position","0 0 0.01");
+    t.setAttribute("value",trunc(item.text,80));    // comment only
+    t.setAttribute("align","center"); t.setAttribute("width",1.2); t.setAttribute("color","#222"); t.setAttribute("position","0 0 0.01");
     g.appendChild(card); g.appendChild(t); anchor.appendChild(g);
   }
   const pos=(ang,r,j=0)=>({x:Math.cos(ang)*r+(Math.random()-.5)*j, y:Math.sin(ang)*r+(Math.random()-.5)*j*.6, z:.02});
@@ -176,10 +167,8 @@
     const total = allComments.length, pages = Math.ceil(total/PAGE_SIZE);
     const start = page*PAGE_SIZE, end = Math.min(start+PAGE_SIZE,total);
     const items = allComments.slice(start,end);
-
     const R=.45, J=.08;
     items.forEach((it,i)=> placeBubble(it, pos((i/items.length)*2*Math.PI, R, J)) );
-
     statusEl.textContent = `Showing ${start+1}-${end} of ${total} (page ${page+1}/${pages}).`;
   }
 
@@ -187,7 +176,7 @@
     try{
       hud.textContent = "Loading comments…";
       allComments = await getComments();
-      if(reset) page=0;
+      if(reset) page=0;              // back to first page (latest 3)
       renderPage();
       hud.textContent = `Loaded ${allComments.length} total.`;
     }catch(e){
@@ -196,6 +185,27 @@
       statusEl.textContent = "CSV error.";
     }
   }
+
+  // ===== Buttons =====
+  let pollAbort = null;
+  document.getElementById('btn-form').onclick = async () => {
+    if(!ADD_URL.startsWith("http")) return alert("Set ADD_URL to your Google Form.");
+    try{ formFrame.src = ADD_URL; modal.showModal(); }catch{ window.open(ADD_URL,"_blank"); }
+    // start polling for a new row to detect submit
+    const prev = await getRowCountSafe();
+    pollAbort = pollForNewSubmission(prev, 45000, 2500, async () => {
+      if (modal.open) modal.close();     // auto-close after submit
+      if (hadTarget) ui.classList.add('show'); // bring back the bar
+      await fetchAndRender(true);        // reset to page 1
+      statusEl.textContent = "Thanks! Your comment was added.";
+    });
+  };
+
+  document.getElementById('btn-close').onclick = () => {
+    if (pollAbort) { pollAbort(); pollAbort = null; }
+    modal.close();
+    if (hadTarget) ui.classList.add('show'); // re-show the bottom bar after closing
+  };
 
   document.getElementById('btn-refresh').onclick = ()=>{
     if(!allComments.length){ fetchAndRender(true); return; }
@@ -206,12 +216,16 @@
 
   // ===== AR events: gate the UI =====
   anchor.addEventListener('targetFound', ()=>{
-    hint.style.display='none'; ui.classList.add('show');
+    hadTarget = true;
+    hint.style.display='none';
+    ui.classList.add('show');                 // show the bar
     statusEl.textContent="Target found. Loading comments…";
     fetchAndRender(true);
   });
   anchor.addEventListener('targetLost',  ()=>{
-    hint.style.display='block'; ui.classList.remove('show');
+    hadTarget = false;
+    hint.style.display='block';
+    ui.classList.remove('show');              // hide the bar
     statusEl.textContent="Waiting for target…";
   });
 
