@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>AR Artwork — Bubbles + Threads</title>
+<title>AR Artwork — 2 Bubbles + Freeze</title>
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 <style>
@@ -19,7 +19,7 @@
          opacity:0;transition:.25s;z-index:6}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
-  /* full-screen composer (unchanged) */
+  /* full-screen composer (kept) */
   #composer{position:fixed; inset:0; z-index:10; display:none;
     background:linear-gradient(140deg,#ffd7bd 15%,#ffc6e0 85%);
     padding:env(safe-area-inset-top) 16px calc(20px + env(safe-area-inset-bottom)) 16px;}
@@ -37,16 +37,6 @@
   .actions{margin-top:auto; display:flex; gap:10px; justify-content:center; padding:12px 0}
   .btn{padding:12px 16px;border-radius:14px;border:0;cursor:pointer;font-weight:700;background:#2b232b;color:#fff; box-shadow:0 8px 18px rgba(0,0,0,.15)}
   .btn.secondary{background:#ffffffaa; color:#2b232b}
-
-  /* thread modal */
-  dialog#thread{border:0;border-radius:16px;max-width:min(620px,92vw);width:92vw;height:min(70vh,560px);padding:0;overflow:hidden}
-  dialog::backdrop{background:rgba(0,0,0,.55)}
-  .th-head{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#0f1116;color:#fff}
-  .th-body{height:calc(100% - 96px); overflow:auto; background:#11151d; color:#e9eefb; padding:10px 12px}
-  .th-row{background:#0f131a;border:1px solid #232a37;border-radius:12px;padding:8px;margin-bottom:8px;white-space:pre-wrap}
-  .th-form{display:flex;gap:8px;align-items:center;padding:10px 12px;background:#0f1116}
-  .th-form input{flex:1;background:#11151d;border:1px solid #2a3342;border-radius:10px;color:#e9eefb;padding:10px}
-  .th-form button{padding:10px 12px;border-radius:10px;border:0;background:#5b8cff;color:#fff;font-weight:700}
 </style>
 </head>
 <body>
@@ -61,16 +51,12 @@
     <div class="comp-head">What’s on your mind?</div>
     <div class="pill">
       <input id="compInput" placeholder="What do you feel?" maxlength="300" />
-      <button class="iconbtn" title="privacy">⋯</button>
       <button class="iconbtn" title="send" id="compSend">➤</button>
     </div>
     <div class="chips" id="chipbar">
       <div class="chip touch">Happy</div><div class="chip touch">Grateful</div>
       <div class="chip touch">Curious</div><div class="chip touch">Calm</div>
       <div class="chip touch">Excited</div><div class="chip touch">Inspired</div>
-    </div>
-    <div class="chips" style="margin-top:14px;opacity:.85">
-      <div class="chip">❤️</div><div class="chip">💬</div><div class="chip">↗︎</div>
     </div>
     <div class="actions">
       <button class="btn secondary" id="compClose">Cancel</button>
@@ -79,26 +65,13 @@
   </div>
 </div>
 
-<!-- THREAD MODAL -->
-<dialog id="thread">
-  <div class="th-head">
-    <strong>Comments</strong>
-    <button id="thClose" class="btn secondary" style="padding:8px 12px">Close</button>
-  </div>
-  <div id="thList" class="th-body"></div>
-  <form id="thForm" class="th-form" autocomplete="off">
-    <input id="thInput" placeholder="Write a reply…" maxlength="240"/>
-    <button type="submit">Post</button>
-  </form>
-</dialog>
-
 <!-- AR scene -->
 <a-scene mindar-image="imageTargetSrc: ./targets%20(6).mind"
          renderer="colorManagement:true, physicallyCorrectLights:false"
          vr-mode-ui="enabled:false"
          device-orientation-permission-ui="enabled:true"
          embedded id="scene">
-  <!-- mouse/touch cursor so icons can be tapped -->
+  <!-- cursor so taps on icons/bubbles are clickable if you add them later -->
   <a-camera look-controls="enabled:false">
     <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
   </a-camera>
@@ -106,224 +79,152 @@
 </a-scene>
 
 <script>
-  /* ------------------- STATE / STORAGE ------------------- */
+  /* ---------------- config ---------------- */
+  const MAX_BUBBLES = 2;            // <= always show at most two
+  const FREEZE_AFTER_MS = 600;      // wait a moment, then freeze tracking
   const ART_ID="art1";
-  const K=(n)=>`webar:${ART_ID}:${n}`;
-  const load=(k,f)=>{try{return JSON.parse(localStorage.getItem(K(k))||JSON.stringify(f));}catch{return f;}};
-  const save=(k,v)=>localStorage.setItem(K(k),JSON.stringify(v));
 
-  let dynamic = load('comments', []); // user-created bubbles: [{id,text,ts}]
-  const threadsKey = (id)=>`thread:${id}`;
-  const likesKey   = (id)=>`likes:${id}`;
-  const likedKey   = (id)=>`liked:${id}`;
-
-  /* ------------------- PRETTY, READABLE BUBBLES ------------------- */
-  // Much lighter background: near-white with small peach tint + baked shadow
+  /* ---------- light, readable card ---------- */
   const cache={};
   function bubblePNG(w=900,h=380){
     const key=w+"|"+h; if(cache[key]) return cache[key];
     const cv=document.createElement("canvas"); cv.width=w; cv.height=h; const ctx=cv.getContext("2d");
-    // soft drop shadow behind card
     ctx.shadowColor="rgba(0,0,0,.28)"; ctx.shadowBlur=36; ctx.shadowOffsetY=18;
     const x=20,y=20,ww=w-40,hh=300,r=38;
-    // card
-    ctx.fillStyle="#ffffff"; // solid white for readability
-    ctx.globalAlpha=0.92;
+    ctx.fillStyle="#ffffff"; ctx.globalAlpha=.93;
     ctx.beginPath();
-    ctx.moveTo(x+r,y);
-    ctx.arcTo(x+ww,y,x+ww,y+r,r);
-    ctx.arcTo(x+ww,y+hh,x+ww-r,y+hh,r);
-    ctx.arcTo(x,y+hh,x,y+hh-r,r);
-    ctx.arcTo(x,y,x+r,y,r);
-    ctx.closePath(); ctx.fill();
-    // tiny peach overlay to match mock
-    const g=ctx.createLinearGradient(0,y,0,y+hh);
-    g.addColorStop(0,"#fff3ea"); g.addColorStop(1,"#ffe9f6");
-    ctx.globalAlpha=0.55; ctx.fillStyle=g; ctx.fill();
-    ctx.globalAlpha=1;
-    // speech tail
+    ctx.moveTo(x+r,y); ctx.arcTo(x+ww,y,x+ww,y+r,r);
+    ctx.arcTo(x+ww,y+hh,x+ww-r,y+hh,r); ctx.arcTo(x,y+hh,x,y+hh-r,r);
+    ctx.arcTo(x,y,x+r,y,r); ctx.closePath(); ctx.fill();
+    const g=ctx.createLinearGradient(0,y,0,y+hh); g.addColorStop(0,"#fff3ea"); g.addColorStop(1,"#ffe9f6");
+    ctx.globalAlpha=.4; ctx.fillStyle=g; ctx.fill(); ctx.globalAlpha=1;
     ctx.fillStyle="#ffffffee";
     ctx.beginPath(); ctx.moveTo(w/2-44,y+hh); ctx.lineTo(w/2+44,y+hh); ctx.lineTo(w/2,y+hh+42); ctx.closePath(); ctx.fill();
     return cache[key]=cv.toDataURL("image/png");
   }
 
-  // SVG icons (outline + filled heart)
-  const heartOutline="data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>
-    <path d='M12 21s-6.7-4.5-9.3-7.1A6 6 0 0 1 12 6a6 6 0 0 1 9.3 7.9C18.7 16.5 12 21 12 21z' fill='none' stroke='#ff4d90' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>`);
-  const heartFilled="data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>
-    <path d='M12 21s-6.7-4.5-9.3-7.1A6 6 0 0 1 12 6a6 6 0 0 1 9.3 7.9C18.7 16.5 12 21 12 21z' fill='#ff4d90'/></svg>`);
-  const commentIcon="data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>
-    <path d='M4 4h16v12H8l-4 4V4z' fill='#7aa2ff'/></svg>`);
-  const shareIcon="data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>
-    <path d='M13 5l6 6-6 6v-4H7v-4h6V5z' fill='#9ad68f'/></svg>`);
+  /* ---------- static bubbles (exactly 2) ---------- */
+  const POS_TOP   ={x:-0.22, y: 0.25, z:0.02}, SIZE_TOP   ={w:0.98,h:0.42};
+  const POS_BOTTOM={x: 0.00, y:-0.28, z:0.02}, SIZE_BOTTOM={w:1.12,h:0.46};
 
-  /* ------------------- SPEC + RENDER ------------------- */
   const STATIC_BUBBLES = [
-    { id:"static-1",
-      title:"Zen – the artist",
-      text:`"This piece explores wonder."`,
-      pos:{x:-0.22, y: 0.25, z:0.02}, width:0.98, height:0.42 },
-    { id:"static-2",
-      title:"Curator’s Note",
-      text:`"A quiet yet defiant becoming."`,
-      pos:{x: 0.00, y:-0.28, z:0.02}, width:1.12, height:0.46 }
+    { id:"static-1", title:"Zen – the artist",
+      text:`"This piece explores the interplay of displacement, everyday objects and nostalgic wonder."`,
+      pos:POS_TOP,   size:SIZE_TOP },
+    { id:"static-2", title:"Curator’s Note",
+      text:`"A quiet yet defiant work that turns ordinary retail bags into a field for memory, resilience and becoming."`,
+      pos:POS_BOTTOM,size:SIZE_BOTTOM }
   ];
 
+  /* ---------- local storage for one extra visitor bubble (optional) ---------- */
+  const K=(n)=>`webar:${ART_ID}:${n}`;
+  const load=(k,f)=>{try{return JSON.parse(localStorage.getItem(K(k))||JSON.stringify(f));}catch{return f;}};
+  const save=(k,v)=>localStorage.setItem(K(k),JSON.stringify(v));
+  let dynamic = load('comments', []); // [{id,text,ts}]
+
+  /* ---------- build a bubble entity ---------- */
   const anchorEl=document.getElementById('anchor');
-  const hint=document.getElementById('hint');
-  const fab=document.getElementById('fab');
-  const toast=document.getElementById('toast');
-
-  function addIconRow(parent,spec){
-    const bid = spec.id;
-    const baseX=-spec.width/2+0.14, y=-spec.height/2+0.11, z=0.032, gap=0.18, size=0.11;
-
-    const liked = localStorage.getItem(K(likedKey(bid)))==="1";
-    const likeCount = Number(localStorage.getItem(K(likesKey(bid)))||0);
-    const thread = load(threadsKey(bid), []);
-    const mkImg = (src,x,cls)=>{ const i=document.createElement("a-image");
-      i.setAttribute("src",src); i.setAttribute("shader","flat");
-      i.setAttribute("material","transparent:true; alphaTest:0.01; side:double");
-      i.setAttribute("width",size); i.setAttribute("height",size);
-      i.setAttribute("position",`${x} ${y} ${z}`); i.classList.add("clickable"); i.setAttribute("data-bid",bid);
-      if(cls) i.setAttribute("data-role",cls);
-      parent.appendChild(i); return i; };
-
-    const heart = mkImg(liked?heartFilled:heartOutline, baseX+0, "heart");
-    const chat  = mkImg(commentIcon, baseX+gap, "chat");
-    const share = mkImg(shareIcon, baseX+gap*2, "share");
-
-    const mkText = (val,x)=>{ const t=document.createElement("a-text");
-      t.setAttribute("value", String(val)); t.setAttribute("color","#333");
-      t.setAttribute("align","left"); t.setAttribute("width",1.2);
-      t.setAttribute("position", `${x+0.10} ${y-0.005} ${z}`); parent.appendChild(t); return t; };
-
-    const likeT = mkText(likeCount, baseX);
-    const chatT = mkText(thread.length, baseX+gap);
-
-    // interactions
-    heart.addEventListener('click', (e)=>{ e.stopPropagation(); toggleLike(bid, heart, likeT); });
-    chat .addEventListener('click', (e)=>{ e.stopPropagation(); openThread(bid, chatT); });
-    share.addEventListener('click', async (e)=>{
-      e.stopPropagation();
-      const url = location.href;
-      try{ if(navigator.share) await navigator.share({title:"AR Artwork", url});
-           else { await navigator.clipboard.writeText(url); showToast("Link copied"); } }
-      catch{}
-    });
-  }
-
-  function addBubble(anchor,spec){
-    const g=document.createElement("a-entity");
+  function addBubble(spec){
+    const g=document.createElement("a-entity"); g.dataset.bid = spec.id;
     g.setAttribute("position",`${spec.pos.x} ${spec.pos.y} ${spec.pos.z}`);
 
     const bg=document.createElement("a-image");
-    bg.setAttribute("src",bubblePNG()); // crisp readable card
-    bg.setAttribute("width",spec.width); bg.setAttribute("height",spec.height);
-    bg.setAttribute("shader","flat");
-    bg.setAttribute("material","transparent:true; alphaTest:0.01; side:double");
+    bg.setAttribute("src",bubblePNG());
+    bg.setAttribute("width",spec.size.w); bg.setAttribute("height",spec.size.h);
+    bg.setAttribute("shader","flat"); bg.setAttribute("material","transparent:true; alphaTest:0.01; side:double");
     g.appendChild(bg);
 
     const title=document.createElement("a-text");
     title.setAttribute("value",spec.title||"");
     title.setAttribute("color","#222"); title.setAttribute("align","left"); title.setAttribute("width",1.8);
-    title.setAttribute("position",`${-spec.width/2+0.12} ${spec.height/2-0.12} 0.03`); g.appendChild(title);
+    title.setAttribute("position",`${-spec.size.w/2+0.12} ${spec.size.h/2-0.12} 0.03`); g.appendChild(title);
 
     const body=document.createElement("a-text");
     body.setAttribute("value",spec.text||"");
     body.setAttribute("color","#1f1f1f"); body.setAttribute("align","left");
     body.setAttribute("wrap-count",34); body.setAttribute("width",1.8);
-    body.setAttribute("position",`${-spec.width/2+0.12} ${spec.height/2-0.30} 0.03`); g.appendChild(body);
+    body.setAttribute("position",`${-spec.size.w/2+0.12} ${spec.size.h/2-0.30} 0.03`); g.appendChild(body);
 
-    addIconRow(g,spec);
-    g.setAttribute("animation",`property: position; dir: alternate; dur:2200; easing:easeInOutSine; loop:true; to: ${spec.pos.x} ${spec.pos.y+0.02} ${spec.pos.z}`);
-    anchor.appendChild(g);
+    anchorEl.appendChild(g);
+    return g;
   }
 
-  function showToast(m){ toast.textContent=m; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),1400); }
-
-  /* ------------------- LIKE / THREAD LOGIC ------------------- */
-  function toggleLike(bid, heartEl, labelEl){
-    const liked = localStorage.getItem(K(likedKey(bid)))==="1";
-    let count = Number(localStorage.getItem(K(likesKey(bid)))||0);
-    if(liked){ localStorage.setItem(K(likedKey(bid)),"0"); count=Math.max(0,count-1); heartEl.setAttribute("src",heartOutline); }
-    else     { localStorage.setItem(K(likedKey(bid)),"1"); count=count+1; heartEl.setAttribute("src",heartFilled); }
-    localStorage.setItem(K(likesKey(bid)), String(count));
-    labelEl.setAttribute("value", String(count));
+  /* ---------- render: always at most 2 ---------- */
+  let rendered=[];
+  function clearRendered(){ rendered.forEach(e=>e.remove()); rendered=[]; }
+  function renderTwo(){
+    clearRendered();
+    // pick 2: static first, then latest visitor if present
+    const chosen = STATIC_BUBBLES.slice(0,2);
+    if (dynamic[0]) {
+      // place visitor bubble at bottom, push curator up
+      chosen[1] = { id: dynamic[0].id, title: "Visitor",
+                    text: dynamic[0].text, pos: POS_BOTTOM, size: SIZE_BOTTOM };
+    }
+    chosen.slice(0,MAX_BUBBLES).forEach(spec=> rendered.push(addBubble(spec)));
   }
 
-  const threadDlg=document.getElementById('thread');
-  const thList=document.getElementById('thList');
-  const thInput=document.getElementById('thInput');
-  const thForm=document.getElementById('thForm');
-  const thClose=document.getElementById('thClose');
-  let currentThread=null, currentCountLabel=null;
-
-  function renderThread(id){
-    const items = load(threadsKey(id), []);
-    thList.innerHTML="";
-    items.forEach(it=>{
-      const div=document.createElement('div'); div.className="th-row";
-      const when=new Date(it.ts).toLocaleString();
-      div.textContent = `${it.text}  \n— ${when}`;
-      thList.appendChild(div);
-    });
-  }
-  function openThread(id,countLabel){
-    currentThread=id; currentCountLabel=countLabel;
-    renderThread(id);
-    thInput.value=""; threadDlg.showModal();
-  }
-  thClose.onclick=()=>threadDlg.close();
-  thForm.addEventListener('submit',(e)=>{
-    e.preventDefault();
-    const t=(thInput.value||"").trim(); if(!t) return;
-    const arr=load(threadsKey(currentThread), []);
-    arr.push({text:t, ts:Date.now()}); save(threadsKey(currentThread), arr);
-    thInput.value=""; renderThread(currentThread);
-    if(currentCountLabel) currentCountLabel.setAttribute("value", String(arr.length));
-  });
-
-  /* ------------------- COMPOSER (kept) ------------------- */
+  /* ---------- composer (adds/keeps max 1 dynamic) ---------- */
   const composer=document.getElementById('composer');
   const compInput=document.getElementById('compInput');
   const compPost=document.getElementById('compPost');
   const compSend=document.getElementById('compSend');
   const compClose=document.getElementById('compClose');
   const chipbar=document.getElementById('chipbar');
+  const fab=document.getElementById('fab');
+  const hint=document.getElementById('hint');
+  const toast=document.getElementById('toast');
 
+  function showToast(m){ toast.textContent=m; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),1400); }
   function openComposer(){ composer.classList.add('show'); compInput.focus(); }
   function closeComposer(){ composer.classList.remove('show'); }
+
   fab.addEventListener('click', openComposer);
   compClose.addEventListener('click', closeComposer);
   compSend.addEventListener('click', ()=>compPost.click());
+
   chipbar.addEventListener('click', (e)=>{
     if(!e.target.classList.contains('chip')) return;
     const t=e.target.textContent.trim();
     compInput.value = compInput.value ? (compInput.value + ' ' + t) : t;
     compInput.focus();
   });
+
   compPost.addEventListener('click', ()=>{
     const text=(compInput.value||"").trim(); if(!text){ showToast('Type your thought first'); return; }
     compInput.value="";
-    const id="dyn-"+Date.now();
-    dynamic.unshift({id,text,ts:Date.now()}); save('comments', dynamic);
-    addBubble(anchorEl,{ id, title:"Visitor", text, width:0.96, height:0.40, pos:{x:0, y:-0.10, z:0.02} });
-    closeComposer(); showToast('Saved on this device');
+    dynamic = [{id:"dyn-"+Date.now(), text, ts:Date.now()}]; // keep only the latest one
+    save('comments', dynamic);
+    renderTwo(); closeComposer(); showToast('Saved on this device');
   });
 
-  /* ------------------- BOOT + AR EVENTS ------------------- */
-  function seedStaticOnce(){
-    if(anchorEl.__seeded) return;
-    STATIC_BUBBLES.forEach(b=>addBubble(anchorEl,b));
-    dynamic.forEach((d,i)=> addBubble(anchorEl,{
-      id:d.id, title:"Visitor", text:d.text, width:0.96, height:0.40,
-      pos:{x:(i%2?0.22:-0.18), y:-0.05-(i*0.08), z:0.02}
-    }));
-    anchorEl.__seeded=true;
+  /* ---------- freeze tracking after first lock ---------- */
+  let frozen=false;
+  function freezeTracking(){
+    if (frozen) return;
+    frozen=true;
+    // clone anchor world transform to a sibling holder, move bubbles there, remove tracking component
+    const THREE = AFRAME.THREE;
+    const holder=document.createElement('a-entity'); holder.id='locked-holder';
+    anchorEl.sceneEl.appendChild(holder);
+    holder.object3D.matrixAutoUpdate=false;
+    holder.object3D.matrix.copy(anchorEl.object3D.matrixWorld);
+    // move rendered nodes
+    rendered.forEach(n=> holder.appendChild(n));
+    // prevent further anchor updates (but keep camera video running)
+    try{ anchorEl.removeAttribute('mindar-image-target'); }catch{}
   }
-  anchorEl.addEventListener('targetFound', ()=>{ hint.style.display='none'; fab.style.display='block'; seedStaticOnce(); });
-  anchorEl.addEventListener('targetLost',  ()=>{ hint.style.display='block'; fab.style.display='none'; });
+
+  /* ---------- AR events ---------- */
+  let seeded=false;
+  anchorEl.addEventListener('targetFound', ()=>{
+    hint.style.display='none'; fab.style.display='block';
+    if (!seeded){ seeded=true; renderTwo(); setTimeout(freezeTracking, FREEZE_AFTER_MS); }
+  });
+  anchorEl.addEventListener('targetLost',  ()=>{
+    // we ignore targetLost after freeze, so bubbles stay stable on screen
+    if (!frozen){ hint.style.display='block'; fab.style.display='none'; }
+  });
 </script>
 </body>
 </html>
