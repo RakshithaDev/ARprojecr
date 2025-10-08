@@ -2,31 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>AR Artwork — Hard-coded Comments (Step 1)</title>
-
-<!-- A-Frame & MindAR -->
+<title>AR Artwork — Styled Bubbles (Step 1 fixed)</title>
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
-
 <style>
-  :root{
-    --peach1:#ffd7bd; --peach2:#ffc6e0; --text:#ffffff; --muted:#eae5ee;
-  }
+  :root{ --t:#fff; --muted:#efeaf2; }
   html,body{margin:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto}
   .a-enter-vr,.a-enter-vr-button,.a-enter-ar,.a-enter-ar-button{display:none!important}
-
-  /* small top hint */
-  #hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);
-        background:rgba(0,0,0,.55);color:#fff;padding:6px 10px;border-radius:999px;z-index:3}
-
-  /* floating action button (the orb) */
-  #fab{
-    position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
-    width:68px;height:68px;border-radius:50%;
-    background:radial-gradient(120% 120% at 30% 30%, #ffb2d9, #ffcf9a 55%, #b6c8ff);
-    box-shadow:0 16px 40px rgba(255,160,200,.45), 0 6px 18px rgba(0,0,0,.35);
-    border:1px solid rgba(255,255,255,.35); z-index:3; display:none; /* shown on targetFound */
-  }
+  #hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);
+        color:#fff;padding:6px 10px;border-radius:999px;z-index:3}
+  #fab{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);width:68px;height:68px;border-radius:50%;
+       background:radial-gradient(120% 120% at 30% 30%, #ffb2d9, #ffcf9a 55%, #b6c8ff);
+       box-shadow:0 16px 40px rgba(255,160,200,.45), 0 6px 18px rgba(0,0,0,.35);
+       border:1px solid rgba(255,255,255,.35); z-index:3; display:none}
   #toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%) translateY(18px);
          background:rgba(15,18,26,.92);color:#fff;border:1px solid #263044;
          padding:10px 14px;border-radius:12px;opacity:0;transition:.25s;z-index:4}
@@ -39,139 +27,140 @@
 <div id="fab" aria-label="Share your thoughts"></div>
 <div id="toast">Coming soon…</div>
 
-<!-- IMPORTANT: set imageTargetSrc to YOUR .mind file path -->
-<a-scene
-  mindar-image="imageTargetSrc: ./targets%20(6).mind"
-  renderer="colorManagement:true, physicallyCorrectLights:true"
-  vr-mode-ui="enabled:false"
-  device-orientation-permission-ui="enabled:true"
-  embedded
-  id="scene">
+<!-- CHANGE THIS PATH to your .mind file -->
+<a-scene mindar-image="imageTargetSrc: ./targets%20(6).mind"
+         renderer="colorManagement:true, physicallyCorrectLights:true"
+         vr-mode-ui="enabled:false"
+         device-orientation-permission-ui="enabled:true"
+         embedded id="scene">
+  <a-assets id="assets"></a-assets>
   <a-camera look-controls="enabled:false"></a-camera>
-
-  <!-- Anchor that locks to the artwork -->
   <a-entity id="anchor" mindar-image-target="targetIndex: 0"></a-entity>
 </a-scene>
 
 <script>
-  /* ---------- CONFIG: your hard-coded comments for step 1 ---------- */
+  /* ------- Hard-coded bubbles (text + positions like your Figma) ------- */
   const BUBBLES = [
     {
-      title: "Zen — the artist",
-      text:  `"This piece explores the interplay of displacement, everyday objects and\nnostalgic wonder."`,
-      pos:   {x:-0.22, y: 0.25, z:0.02},  // top-left
-      width: 0.95, height: 0.40
+      title: "Zen – the artist",
+      text:  `"This piece explores the interplay of displacement, everyday objects and nostalgic wonder."`,
+      pos:   {x:-0.22, y: 0.25, z:0.02},
+      width: 0.98, height: 0.42, palette: 0
     },
     {
       title: "Curator’s Note",
-      text:  `"A quiet yet defiant work that turns ordinary retail bags into a field for memory,\nresilience and becoming."`,
-      pos:   {x: 0.00, y:-0.28, z:0.02},  // bottom-center
-      width: 1.05, height: 0.44
+      text:  `"A quiet yet defiant work that turns ordinary retail bags into a field for memory, resilience and becoming."`,
+      pos:   {x: 0.00, y:-0.28, z:0.02},
+      width: 1.12, height: 0.46, palette: 1
     }
   ];
 
-  /* ---------- cute speech-bubble background as inline SVG texture ---------- */
+  /* ------- SVG helpers (no filters; very compatible) ------- */
+  const gradients = [
+    ["#FFE1C9", "#FFC9E6"], // peach→rose
+    ["#F1F5FF", "#DFE5FF"], // soft blue
+    ["#E9FFF5", "#CFEFE3"]  // mint
+  ];
   const bubbleCache = {};
-  function bubbleDataURL(fill1, fill2){
-    const k = fill1+"|"+fill2; if(bubbleCache[k]) return bubbleCache[k];
-    const svg =
-    `<svg xmlns='http://www.w3.org/2000/svg' width='900' height='380' viewBox='0 0 900 380'>
+  function bubbleDataURL(p){
+    const [a,b]=gradients[p%gradients.length];
+    const key=a+"|"+b; if(bubbleCache[key]) return bubbleCache[key];
+    const svg = `
+    <svg xmlns='http://www.w3.org/2000/svg' width='900' height='380' viewBox='0 0 900 380'>
       <defs>
         <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
-          <stop offset='0%' stop-color='${fill1}'/><stop offset='100%' stop-color='${fill2}' stop-opacity='.92'/>
+          <stop offset='0%' stop-color='${a}'/><stop offset='100%' stop-color='${b}'/>
         </linearGradient>
-        <filter id='soft' x='-10%' y='-10%' width='120%' height='120%'>
-          <feGaussianBlur stdDeviation='5'/>
-        </filter>
       </defs>
-      <rect x='20' y='20' width='860' height='300' rx='36' fill='url(#g)' filter='url(#soft)' opacity='.98'/>
-      <rect x='20' y='20' width='860' height='300' rx='36' fill='url(#g)' stroke='#ffffff' stroke-opacity='.35' stroke-width='5'/>
-      <path d='M 460 320 L 520 320 L 490 360 Z' fill='url(#g)' stroke='#ffffff' stroke-opacity='.35' stroke-width='5' stroke-linejoin='round'/>
+      <rect x='20' y='20' width='860' height='300' rx='36' fill='url(#g)' fill-opacity='0.96'/>
+      <path d='M 460 320 L 520 320 L 490 360 Z' fill='url(#g)' fill-opacity='0.96'/>
+      <rect x='20' y='20' width='860' height='300' rx='36' fill='none' stroke='#ffffff' stroke-opacity='0.35' stroke-width='5'/>
+      <path d='M 460 320 L 520 320 L 490 360 Z' fill='none' stroke='#ffffff' stroke-opacity='0.35' stroke-width='5' stroke-linejoin='round'/>
     </svg>`;
-    return bubbleCache[k] = "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+    return bubbleCache[key] = "data:image/svg+xml;utf8,"+encodeURIComponent(svg);
   }
 
-  /* ---------- add one bubble group (bg + title + body + tiny icons) ---------- */
-  function addBubble(anchor, spec, paletteIndex=0){
-    const pastel = [
-      ["#FFE1C9","#FFC9E6"], // peach → rose
-      ["#EAF5FF","#D7E0FF"], // blue-ish
-      ["#E9FFF5","#CFEFE3"]  // mint
-    ][paletteIndex % 3];
+  /* ------- Tiny vector icons as images (emoji don’t render in A-Frame text) ------- */
+  const icons = {
+    heart:  "data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='64' height='64'><path d='M12 21s-6.7-4.5-9.3-7.1A6 6 0 1 1 12 6a6 6 0 1 1 9.3 7.9C18.7 16.5 12 21 12 21z' fill='white' fill-opacity='.9'/></svg>`),
+    comment:"data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='64' height='64'><path d='M4 4h16v12H8l-4 4V4z' fill='white' fill-opacity='.9'/></svg>`),
+    share:  "data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='64' height='64'><path d='M13 5l6 6-6 6v-4H7v-4h6V5z' fill='white' fill-opacity='.9'/></svg>`)
+  };
 
+  function addIconRow(parent, spec){
+    const baseX = -spec.width/2 + 0.12, y = -spec.height/2 + 0.10, z = 0.02;
+    const gap = 0.16, size = 0.10;
+    const make = (src, x) => {
+      const img = document.createElement("a-image");
+      img.setAttribute("src", src);
+      img.setAttribute("width", size);
+      img.setAttribute("height", size);
+      img.setAttribute("position", `${x} ${y} ${z}`);
+      parent.appendChild(img);
+    };
+    make(icons.heart,   baseX + 0.00);
+    make(icons.comment, baseX + gap);
+    make(icons.share,   baseX + gap*2);
+  }
+
+  /* ------- Build one bubble ------- */
+  function addBubble(anchor, spec){
     const g = document.createElement("a-entity");
     g.setAttribute("position", `${spec.pos.x} ${spec.pos.y} ${spec.pos.z}`);
 
-    // background
+    // Background image (with fallback color if SVG fails)
     const bg = document.createElement("a-image");
-    bg.setAttribute("src", bubbleDataURL(pastel[0], pastel[1]));
+    bg.setAttribute("src", bubbleDataURL(spec.palette));
     bg.setAttribute("width", spec.width);
     bg.setAttribute("height", spec.height);
-    bg.setAttribute("material", "transparent:true; opacity:1; side:double");
+    bg.setAttribute("material", "transparent:true; side:double; color:#ffd7bd; opacity:0.96");
     g.appendChild(bg);
 
-    // title
+    // Title
     const title = document.createElement("a-text");
     title.setAttribute("value", spec.title);
     title.setAttribute("color", "#ffffff");
     title.setAttribute("align", "left");
-    title.setAttribute("width", 1.6);
-    title.setAttribute("font-weight", "bold");
-    title.setAttribute("position", `${-spec.width/2 + 0.12} ${spec.height/2 - 0.12} 0.01`);
+    title.setAttribute("width", 1.7);
+    title.setAttribute("position", `${-spec.width/2 + 0.12} ${spec.height/2 - 0.12} 0.03`);
     g.appendChild(title);
 
-    // body
+    // Body
     const body = document.createElement("a-text");
     body.setAttribute("value", spec.text);
-    body.setAttribute("color", "#f3eef6");
+    body.setAttribute("color", "#efeaf2");
     body.setAttribute("align", "left");
-    body.setAttribute("width", 1.6);
     body.setAttribute("wrap-count", 34);
-    body.setAttribute("position", `${-spec.width/2 + 0.12} ${spec.height/2 - 0.26} 0.01`);
+    body.setAttribute("width", 1.7);
+    body.setAttribute("position", `${-spec.width/2 + 0.12} ${spec.height/2 - 0.30} 0.03`);
     g.appendChild(body);
 
-    // tiny icon row (emoji placeholders)
-    const icons = document.createElement("a-text");
-    icons.setAttribute("value", "♡   💬   ↗︎");
-    icons.setAttribute("color", "#ffffff");
-    icons.setAttribute("opacity", "0.85");
-    icons.setAttribute("align", "left");
-    icons.setAttribute("width", 1.6);
-    icons.setAttribute("position", `${-spec.width/2 + 0.12} ${-spec.height/2 + 0.10} 0.01`);
-    g.appendChild(icons);
+    // Icon row
+    addIconRow(g, spec);
 
-    // subtle bob animation
-    g.setAttribute("animation", "property: position; dir: alternate; dur: 2200; easing: easeInOutSine; loop: true; to: " +
-      `${spec.pos.x} ${spec.pos.y + 0.02} ${spec.pos.z}`);
+    // Subtle bob animation
+    g.setAttribute("animation", `property: position; dir: alternate; dur:2200; easing:easeInOutSine; loop:true; to: ${spec.pos.x} ${spec.pos.y + 0.02} ${spec.pos.z}`);
 
     anchor.appendChild(g);
   }
 
-  /* ---------- show/hide on target events; FAB behavior ---------- */
+  /* ------- Show UI on track; hide when lost ------- */
   const anchor = document.getElementById('anchor');
   const hint   = document.getElementById('hint');
   const fab    = document.getElementById('fab');
   const toast  = document.getElementById('toast');
 
   anchor.addEventListener('targetFound', ()=>{
-    hint.style.display = 'none';
-    fab.style.display  = 'block';
-
-    // add our hard-coded bubbles once
-    if (!anchor.__seeded){
-      BUBBLES.forEach((b,i)=> addBubble(anchor, b, i));
-      anchor.__seeded = true;
-    }
+    hint.style.display='none';
+    fab.style.display='block';
+    if(!anchor.__seeded){ BUBBLES.forEach(b=>addBubble(anchor,b)); anchor.__seeded=true; }
   });
-  anchor.addEventListener('targetLost', ()=>{
-    hint.style.display = 'block';
-    fab.style.display  = 'none';
-  });
+  anchor.addEventListener('targetLost', ()=>{ hint.style.display='block'; fab.style.display='none'; });
 
   fab.addEventListener('click', ()=>{
-    toast.textContent = "Share your thoughts — coming soon";
+    toast.textContent="Share your thoughts — coming soon";
     toast.classList.add('show');
-    setTimeout(()=>toast.classList.remove('show'), 1600);
+    setTimeout(()=>toast.classList.remove('show'),1600);
   });
 </script>
 </body>
