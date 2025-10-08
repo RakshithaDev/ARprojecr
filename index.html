@@ -2,235 +2,177 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>AR Artwork + Comments</title>
+<title>AR Artwork — Hard-coded Comments (Step 1)</title>
 
 <!-- A-Frame & MindAR -->
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
 <style>
+  :root{
+    --peach1:#ffd7bd; --peach2:#ffc6e0; --text:#ffffff; --muted:#eae5ee;
+  }
   html,body{margin:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto}
-  /* hide A-Frame VR/AR buttons */
   .a-enter-vr,.a-enter-vr-button,.a-enter-ar,.a-enter-ar-button{display:none!important}
 
-  #hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;padding:6px 10px;border-radius:999px;z-index:3}
-  #hud{position:fixed;top:12px;left:12px;background:rgba(0,0,0,.55);color:#fff;padding:6px 10px;border-radius:10px;font-size:12px;z-index:3}
+  /* small top hint */
+  #hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);
+        background:rgba(0,0,0,.55);color:#fff;padding:6px 10px;border-radius:999px;z-index:3}
 
-  /* bottom bar (hidden until targetFound) */
-  #ui{position:fixed;left:0;right:0;bottom:0;padding:12px;background:rgba(0,0,0,.55);color:#fff;
-      backdrop-filter:blur(6px);transform:translateY(110%);transition:.25s;z-index:3}
-  #ui.show{transform:translateY(0)}
-  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .btn{padding:10px 14px;border-radius:12px;border:0;background:#42a5f5;color:#000;font-weight:700;cursor:pointer}
-  .btn.secondary{background:#30343a;color:#f2f6ff}
+  /* floating action button (the orb) */
+  #fab{
+    position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
+    width:68px;height:68px;border-radius:50%;
+    background:radial-gradient(120% 120% at 30% 30%, #ffb2d9, #ffcf9a 55%, #b6c8ff);
+    box-shadow:0 16px 40px rgba(255,160,200,.45), 0 6px 18px rgba(0,0,0,.35);
+    border:1px solid rgba(255,255,255,.35); z-index:3; display:none; /* shown on targetFound */
+  }
+  #toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%) translateY(18px);
+         background:rgba(15,18,26,.92);color:#fff;border:1px solid #263044;
+         padding:10px 14px;border-radius:12px;opacity:0;transition:.25s;z-index:4}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
 <body>
 
-<!-- ===== CONFIG — change these 3 lines ===== -->
-<script>
-  // If your .mind file is "targets (3).mind" in repo root, keep the %20.
-  // Better: rename to ./assets/art.mind and set TARGET_PATH to "./assets/art.mind"
-  const TARGET_PATH   = "./targets%20(5).mind";
-  const ADD_URL       = "https://docs.google.com/forms/d/e/1FAIpQLSeqRZbSpTWiVs9z6BzntH9ZFGW2LR_9BHIUM7bvAtvZdcdmPA/viewform";
-  const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQQKOqH_3Yl5Vpd-fPqtGgcHgLmq1dO6Pmnc9HuQ1LI2nBZm75Ms8mp1KQHcSQHp087pa7BLkY7BB8p/pub?output=csv";
-</script>
-
 <div id="hint">Point your camera at the artwork</div>
-<div id="hud">Loading…</div>
+<div id="fab" aria-label="Share your thoughts"></div>
+<div id="toast">Coming soon…</div>
 
-<!-- AR scene -->
-<a-scene id="scene"
-  mindar-image="imageTargetSrc: ./targets%20(3).mind"
+<!-- IMPORTANT: set imageTargetSrc to YOUR .mind file path -->
+<a-scene
+  mindar-image="imageTargetSrc: ./targets%20(5).mind"
   renderer="colorManagement:true, physicallyCorrectLights:true"
   vr-mode-ui="enabled:false"
   device-orientation-permission-ui="enabled:true"
-  embedded loading-screen="enabled:false">
+  embedded
+  id="scene">
   <a-camera look-controls="enabled:false"></a-camera>
+
+  <!-- Anchor that locks to the artwork -->
   <a-entity id="anchor" mindar-image-target="targetIndex: 0"></a-entity>
 </a-scene>
 
-<!-- Bottom UI -->
-<div id="ui">
-  <div class="row">
-    <button id="btn-form" class="btn">💬 Share your thoughts</button>
-    <button id="btn-refresh" class="btn secondary">↻ Refresh comments</button>
-    <span id="status" style="opacity:.85">Waiting for target…</span>
-  </div>
-</div>
-
-<!-- Google Form modal -->
-<dialog id="formModal" style="border:0;border-radius:16px;max-width:min(900px,92vw);width:92vw;height:min(80vh,700px);padding:0;overflow:hidden">
-  <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:#0f1116;color:#fff">
-    <strong>Share your thoughts</strong>
-    <button id="btn-close" class="btn secondary">Close</button>
-  </div>
-  <div style="height:calc(100% - 48px)"><iframe id="formFrame" title="Comment Form" src="about:blank" loading="lazy" style="width:100%;height:100%;border:0"></iframe></div>
-</dialog>
-
 <script>
-  /* apply target from CONFIG */
-  const scene = document.getElementById("scene");
-  scene.setAttribute("mindar-image", `imageTargetSrc: ${TARGET_PATH}`);
-
-  const hud=document.getElementById('hud');
-  const ui=document.getElementById('ui');
-  const statusEl=document.getElementById('status');
-  const hint=document.getElementById('hint');
-  const anchor=document.getElementById('anchor');
-  const modal=document.getElementById('formModal');
-  const formFrame=document.getElementById('formFrame');
-
-  // Track target state so we can re-show the bottom bar after closing the form
-  let hadTarget = false;
-
-  // ===== CSV parsing + header matching =====
-  function parseCSV(t){
-    const rows=[], row=[], push=()=>rows.push(row.splice(0)); let cell="", q=false;
-    for(let i=0;i<t.length;i++){const c=t[i],n=t[i+1];
-      if(q){ if(c=='"'&&n=='"'){cell+='"'; i++;} else if(c=='"'){q=false;} else cell+=c; }
-      else { if(c=='"') q=true; else if(c==','){row.push(cell);cell="";}
-             else if(c=='\n'){row.push(cell);cell="";push();} else if(c!='\r'){cell+=c;} }
-    } if(cell||row.length){row.push(cell);push();} return rows;
-  }
-  const normalize = s => (s||"").toLowerCase().replace(/[’']/g,"'").replace(/[^a-z0-9? ]+/g,'').trim();
-  function findCol(headers, hints){
-    const H = headers.map(h=>normalize(h));
-    for(const h of hints){ const i = H.findIndex(x=>x.includes(normalize(h))); if(i>=0) return i; }
-    return -1;
-  }
-
-  // Your sheet headers: "Timestamp", "What's on your mind?"
-  const COMMENT_HINTS = ["what's on your mind?","whats on your mind","mind"];
-
-  async function fetchRows(){
-    const res = await fetch(SHEET_CSV_URL,{cache:"no-store"});
-    if(!res.ok) throw new Error(`CSV HTTP ${res.status}`);
-    return parseCSV(await res.text());
-  }
-  async function getComments(){
-    const rows = await fetchRows();
-    if(!rows.length) return [];
-    const headers = rows[0];
-    const ci = findCol(headers, COMMENT_HINTS);
-
-    const items=[];
-    for(let i=1;i<rows.length;i++){
-      const r = rows[i] || [];
-      const text = (ci>=0 ? r[ci] : "").trim();
-      if(!text) continue;
-      items.push({ text }); // comment only (no timestamp)
+  /* ---------- CONFIG: your hard-coded comments for step 1 ---------- */
+  const BUBBLES = [
+    {
+      title: "Zen — the artist",
+      text:  `"This piece explores the interplay of displacement, everyday objects and\nnostalgic wonder."`,
+      pos:   {x:-0.22, y: 0.25, z:0.02},  // top-left
+      width: 0.95, height: 0.40
+    },
+    {
+      title: "Curator’s Note",
+      text:  `"A quiet yet defiant work that turns ordinary retail bags into a field for memory,\nresilience and becoming."`,
+      pos:   {x: 0.00, y:-0.28, z:0.02},  // bottom-center
+      width: 1.05, height: 0.44
     }
-    return items.reverse(); // newest first
-  }
-  async function getRowCountSafe(){
-    try{ const rows = await fetchRows(); return Math.max(rows.length-1, 0); } catch{ return 0; }
-  }
+  ];
 
-  // ===== Poll for a new submission (detects Google Form submit) =====
-  function pollForNewSubmission(prevCount, timeoutMs, intervalMs, onNew){
-    let aborted = false;
-    (async ()=>{
-      const start = Date.now();
-      while(!aborted && Date.now()-start < timeoutMs){
-        await new Promise(r=>setTimeout(r, intervalMs));
-        try{
-          const count = await getRowCountSafe();
-          if (count > prevCount){ onNew(); return; }
-        }catch{/* ignore and retry */}
-      }
-    })();
-    return () => { aborted = true; };
-  }
-
-  // ===== AR bubbles & paging (3 at a time) =====
-  function clearBubbles(){ Array.from(anchor.children).forEach(ch=>anchor.removeChild(ch)); }
-  const trunc=(s,n)=> s && s.length>n ? s.slice(0,n-1)+"…" : (s||"");
-  function placeBubble(item, pos){
-    const g=document.createElement("a-entity"); g.setAttribute("position",`${pos.x} ${pos.y} ${pos.z}`);
-    const card=document.createElement("a-plane");
-    card.setAttribute("width",.68); card.setAttribute("height",.22);
-    card.setAttribute("material","color:#ffb773;opacity:.92;transparent:true;side:double");
-    const t=document.createElement("a-text");
-    t.setAttribute("value",trunc(item.text,80));    // comment only
-    t.setAttribute("align","center"); t.setAttribute("width",1.2); t.setAttribute("color","#222"); t.setAttribute("position","0 0 0.01");
-    g.appendChild(card); g.appendChild(t); anchor.appendChild(g);
-  }
-  const pos=(ang,r,j=0)=>({x:Math.cos(ang)*r+(Math.random()-.5)*j, y:Math.sin(ang)*r+(Math.random()-.5)*j*.6, z:.02});
-
-  const PAGE_SIZE = 3;
-  let allComments=[], page=0;
-
-  function renderPage(){
-    clearBubbles();
-    if(!allComments.length){ statusEl.textContent="No comments yet."; return; }
-    const total = allComments.length, pages = Math.ceil(total/PAGE_SIZE);
-    const start = page*PAGE_SIZE, end = Math.min(start+PAGE_SIZE,total);
-    const items = allComments.slice(start,end);
-    const R=.45, J=.08;
-    items.forEach((it,i)=> placeBubble(it, pos((i/items.length)*2*Math.PI, R, J)) );
-    statusEl.textContent = `Showing ${start+1}-${end} of ${total} (page ${page+1}/${pages}).`;
+  /* ---------- cute speech-bubble background as inline SVG texture ---------- */
+  const bubbleCache = {};
+  function bubbleDataURL(fill1, fill2){
+    const k = fill1+"|"+fill2; if(bubbleCache[k]) return bubbleCache[k];
+    const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='900' height='380' viewBox='0 0 900 380'>
+      <defs>
+        <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
+          <stop offset='0%' stop-color='${fill1}'/><stop offset='100%' stop-color='${fill2}' stop-opacity='.92'/>
+        </linearGradient>
+        <filter id='soft' x='-10%' y='-10%' width='120%' height='120%'>
+          <feGaussianBlur stdDeviation='5'/>
+        </filter>
+      </defs>
+      <rect x='20' y='20' width='860' height='300' rx='36' fill='url(#g)' filter='url(#soft)' opacity='.98'/>
+      <rect x='20' y='20' width='860' height='300' rx='36' fill='url(#g)' stroke='#ffffff' stroke-opacity='.35' stroke-width='5'/>
+      <path d='M 460 320 L 520 320 L 490 360 Z' fill='url(#g)' stroke='#ffffff' stroke-opacity='.35' stroke-width='5' stroke-linejoin='round'/>
+    </svg>`;
+    return bubbleCache[k] = "data:image/svg+xml;utf8," + encodeURIComponent(svg);
   }
 
-  async function fetchAndRender(reset=true){
-    try{
-      hud.textContent = "Loading comments…";
-      allComments = await getComments();
-      if(reset) page=0;              // back to first page (latest 3)
-      renderPage();
-      hud.textContent = `Loaded ${allComments.length} total.`;
-    }catch(e){
-      console.error(e);
-      hud.textContent = "Could not load comments (publish CSV / link).";
-      statusEl.textContent = "CSV error.";
-    }
+  /* ---------- add one bubble group (bg + title + body + tiny icons) ---------- */
+  function addBubble(anchor, spec, paletteIndex=0){
+    const pastel = [
+      ["#FFE1C9","#FFC9E6"], // peach → rose
+      ["#EAF5FF","#D7E0FF"], // blue-ish
+      ["#E9FFF5","#CFEFE3"]  // mint
+    ][paletteIndex % 3];
+
+    const g = document.createElement("a-entity");
+    g.setAttribute("position", `${spec.pos.x} ${spec.pos.y} ${spec.pos.z}`);
+
+    // background
+    const bg = document.createElement("a-image");
+    bg.setAttribute("src", bubbleDataURL(pastel[0], pastel[1]));
+    bg.setAttribute("width", spec.width);
+    bg.setAttribute("height", spec.height);
+    bg.setAttribute("material", "transparent:true; opacity:1; side:double");
+    g.appendChild(bg);
+
+    // title
+    const title = document.createElement("a-text");
+    title.setAttribute("value", spec.title);
+    title.setAttribute("color", "#ffffff");
+    title.setAttribute("align", "left");
+    title.setAttribute("width", 1.6);
+    title.setAttribute("font-weight", "bold");
+    title.setAttribute("position", `${-spec.width/2 + 0.12} ${spec.height/2 - 0.12} 0.01`);
+    g.appendChild(title);
+
+    // body
+    const body = document.createElement("a-text");
+    body.setAttribute("value", spec.text);
+    body.setAttribute("color", "#f3eef6");
+    body.setAttribute("align", "left");
+    body.setAttribute("width", 1.6);
+    body.setAttribute("wrap-count", 34);
+    body.setAttribute("position", `${-spec.width/2 + 0.12} ${spec.height/2 - 0.26} 0.01`);
+    g.appendChild(body);
+
+    // tiny icon row (emoji placeholders)
+    const icons = document.createElement("a-text");
+    icons.setAttribute("value", "♡   💬   ↗︎");
+    icons.setAttribute("color", "#ffffff");
+    icons.setAttribute("opacity", "0.85");
+    icons.setAttribute("align", "left");
+    icons.setAttribute("width", 1.6);
+    icons.setAttribute("position", `${-spec.width/2 + 0.12} ${-spec.height/2 + 0.10} 0.01`);
+    g.appendChild(icons);
+
+    // subtle bob animation
+    g.setAttribute("animation", "property: position; dir: alternate; dur: 2200; easing: easeInOutSine; loop: true; to: " +
+      `${spec.pos.x} ${spec.pos.y + 0.02} ${spec.pos.z}`);
+
+    anchor.appendChild(g);
   }
 
-  // ===== Buttons =====
-  let pollAbort = null;
-  document.getElementById('btn-form').onclick = async () => {
-    if(!ADD_URL.startsWith("http")) return alert("Set ADD_URL to your Google Form.");
-    try{ formFrame.src = ADD_URL; modal.showModal(); }catch{ window.open(ADD_URL,"_blank"); }
-    // start polling for a new row to detect submit
-    const prev = await getRowCountSafe();
-    pollAbort = pollForNewSubmission(prev, 45000, 2500, async () => {
-      if (modal.open) modal.close();     // auto-close after submit
-      if (hadTarget) ui.classList.add('show'); // bring back the bar
-      await fetchAndRender(true);        // reset to page 1
-      statusEl.textContent = "Thanks! Your comment was added.";
-    });
-  };
+  /* ---------- show/hide on target events; FAB behavior ---------- */
+  const anchor = document.getElementById('anchor');
+  const hint   = document.getElementById('hint');
+  const fab    = document.getElementById('fab');
+  const toast  = document.getElementById('toast');
 
-  document.getElementById('btn-close').onclick = () => {
-    if (pollAbort) { pollAbort(); pollAbort = null; }
-    modal.close();
-    if (hadTarget) ui.classList.add('show'); // re-show the bottom bar after closing
-  };
-
-  document.getElementById('btn-refresh').onclick = ()=>{
-    if(!allComments.length){ fetchAndRender(true); return; }
-    const totalPages = Math.ceil(allComments.length/PAGE_SIZE);
-    page = (page+1) % totalPages;
-    renderPage();
-  };
-
-  // ===== AR events: gate the UI =====
   anchor.addEventListener('targetFound', ()=>{
-    hadTarget = true;
-    hint.style.display='none';
-    ui.classList.add('show');                 // show the bar
-    statusEl.textContent="Target found. Loading comments…";
-    fetchAndRender(true);
+    hint.style.display = 'none';
+    fab.style.display  = 'block';
+
+    // add our hard-coded bubbles once
+    if (!anchor.__seeded){
+      BUBBLES.forEach((b,i)=> addBubble(anchor, b, i));
+      anchor.__seeded = true;
+    }
   });
-  anchor.addEventListener('targetLost',  ()=>{
-    hadTarget = false;
-    hint.style.display='block';
-    ui.classList.remove('show');              // hide the bar
-    statusEl.textContent="Waiting for target…";
+  anchor.addEventListener('targetLost', ()=>{
+    hint.style.display = 'block';
+    fab.style.display  = 'none';
   });
 
-  // quick target file check
-  (async()=>{try{const r=await fetch(TARGET_PATH,{cache:"no-store"});hud.textContent=r.ok?"Target file ✓ — aim at the artwork.":`Target file ✗ (${r.status})`;}catch{hud.textContent="Target file check failed."}})();
+  fab.addEventListener('click', ()=>{
+    toast.textContent = "Share your thoughts — coming soon";
+    toast.classList.add('show');
+    setTimeout(()=>toast.classList.remove('show'), 1600);
+  });
 </script>
 </body>
 </html>
