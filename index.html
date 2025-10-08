@@ -2,14 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>AR Artwork — 2 Bubbles + Freeze</title>
+<title>AR Artwork — 2 Bubbles, Screen-Locked</title>
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 <style>
   html,body{margin:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto}
   .a-enter-vr,.a-enter-vr-button,.a-enter-ar,.a-enter-ar-button{display:none!important}
-  #hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);
-        color:#fff;padding:6px 10px;border-radius:999px;z-index:6}
+  #hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;padding:6px 10px;border-radius:999px;z-index:6}
   #fab{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);width:68px;height:68px;border-radius:50%;
        background:radial-gradient(120% 120% at 30% 30%, #ffb2d9, #ffcf9a 55%, #b6c8ff);
        box-shadow:0 16px 40px rgba(255,160,200,.45), 0 6px 18px rgba(0,0,0,.35);
@@ -19,7 +18,7 @@
          opacity:0;transition:.25s;z-index:6}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
-  /* full-screen composer (kept) */
+  /* Composer (unchanged, optional) */
   #composer{position:fixed; inset:0; z-index:10; display:none;
     background:linear-gradient(140deg,#ffd7bd 15%,#ffc6e0 85%);
     padding:env(safe-area-inset-top) 16px calc(20px + env(safe-area-inset-bottom)) 16px;}
@@ -45,7 +44,7 @@
 <div id="fab" aria-label="Share your thoughts"></div>
 <div id="toast">Saved</div>
 
-<!-- FULL-SCREEN COMPOSER -->
+<!-- FULL-SCREEN COMPOSER (optional) -->
 <div id="composer" role="dialog" aria-modal="true">
   <div class="comp-wrap">
     <div class="comp-head">What’s on your mind?</div>
@@ -65,26 +64,23 @@
   </div>
 </div>
 
-<!-- AR scene -->
+<!-- AR scene (point to your .mind) -->
 <a-scene mindar-image="imageTargetSrc: ./targets%20(6).mind"
          renderer="colorManagement:true, physicallyCorrectLights:false"
          vr-mode-ui="enabled:false"
          device-orientation-permission-ui="enabled:true"
          embedded id="scene">
-  <!-- cursor so taps on icons/bubbles are clickable if you add them later -->
-  <a-camera look-controls="enabled:false">
+  <a-camera id="cam" look-controls="enabled:false">
     <a-entity cursor="rayOrigin: mouse" raycaster="objects: .clickable"></a-entity>
   </a-camera>
   <a-entity id="anchor" mindar-image-target="targetIndex: 0"></a-entity>
 </a-scene>
 
 <script>
-  /* ---------------- config ---------------- */
-  const MAX_BUBBLES = 2;            // <= always show at most two
-  const FREEZE_AFTER_MS = 600;      // wait a moment, then freeze tracking
+  const MAX_BUBBLES = 2;
   const ART_ID="art1";
 
-  /* ---------- light, readable card ---------- */
+  /* light, readable card (PNG) */
   const cache={};
   function bubblePNG(w=900,h=380){
     const key=w+"|"+h; if(cache[key]) return cache[key];
@@ -92,10 +88,9 @@
     ctx.shadowColor="rgba(0,0,0,.28)"; ctx.shadowBlur=36; ctx.shadowOffsetY=18;
     const x=20,y=20,ww=w-40,hh=300,r=38;
     ctx.fillStyle="#ffffff"; ctx.globalAlpha=.93;
-    ctx.beginPath();
-    ctx.moveTo(x+r,y); ctx.arcTo(x+ww,y,x+ww,y+r,r);
-    ctx.arcTo(x+ww,y+hh,x+ww-r,y+hh,r); ctx.arcTo(x,y+hh,x,y+hh-r,r);
-    ctx.arcTo(x,y,x+r,y,r); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x+r,y);
+    ctx.arcTo(x+ww,y,x+ww,y+r,r); ctx.arcTo(x+ww,y+hh,x+ww-r,y+hh,r);
+    ctx.arcTo(x,y+hh,x,y+hh-r,r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath(); ctx.fill();
     const g=ctx.createLinearGradient(0,y,0,y+hh); g.addColorStop(0,"#fff3ea"); g.addColorStop(1,"#ffe9f6");
     ctx.globalAlpha=.4; ctx.fillStyle=g; ctx.fill(); ctx.globalAlpha=1;
     ctx.fillStyle="#ffffffee";
@@ -103,79 +98,94 @@
     return cache[key]=cv.toDataURL("image/png");
   }
 
-  /* ---------- static bubbles (exactly 2) ---------- */
+  /* static bubbles (two) */
   const POS_TOP   ={x:-0.22, y: 0.25, z:0.02}, SIZE_TOP   ={w:0.98,h:0.42};
   const POS_BOTTOM={x: 0.00, y:-0.28, z:0.02}, SIZE_BOTTOM={w:1.12,h:0.46};
-
   const STATIC_BUBBLES = [
     { id:"static-1", title:"Zen – the artist",
       text:`"This piece explores the interplay of displacement, everyday objects and nostalgic wonder."`,
-      pos:POS_TOP,   size:SIZE_TOP },
+      pos:POS_TOP, size:SIZE_TOP },
     { id:"static-2", title:"Curator’s Note",
       text:`"A quiet yet defiant work that turns ordinary retail bags into a field for memory, resilience and becoming."`,
-      pos:POS_BOTTOM,size:SIZE_BOTTOM }
+      pos:POS_BOTTOM, size:SIZE_BOTTOM }
   ];
 
-  /* ---------- local storage for one extra visitor bubble (optional) ---------- */
+  /* local storage for 1 visitor comment max (optional) */
   const K=(n)=>`webar:${ART_ID}:${n}`;
   const load=(k,f)=>{try{return JSON.parse(localStorage.getItem(K(k))||JSON.stringify(f));}catch{return f;}};
   const save=(k,v)=>localStorage.setItem(K(k),JSON.stringify(v));
   let dynamic = load('comments', []); // [{id,text,ts}]
 
-  /* ---------- build a bubble entity ---------- */
   const anchorEl=document.getElementById('anchor');
+  const camEl=document.getElementById('cam');
+  const hint=document.getElementById('hint');
+  const fab=document.getElementById('fab');
+  const toast=document.getElementById('toast');
+
+  function showToast(m){ toast.textContent=m; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),1400); }
+
   function addBubble(spec){
     const g=document.createElement("a-entity"); g.dataset.bid = spec.id;
     g.setAttribute("position",`${spec.pos.x} ${spec.pos.y} ${spec.pos.z}`);
-
     const bg=document.createElement("a-image");
     bg.setAttribute("src",bubblePNG());
     bg.setAttribute("width",spec.size.w); bg.setAttribute("height",spec.size.h);
     bg.setAttribute("shader","flat"); bg.setAttribute("material","transparent:true; alphaTest:0.01; side:double");
     g.appendChild(bg);
-
     const title=document.createElement("a-text");
     title.setAttribute("value",spec.title||"");
     title.setAttribute("color","#222"); title.setAttribute("align","left"); title.setAttribute("width",1.8);
     title.setAttribute("position",`${-spec.size.w/2+0.12} ${spec.size.h/2-0.12} 0.03`); g.appendChild(title);
-
     const body=document.createElement("a-text");
     body.setAttribute("value",spec.text||"");
-    body.setAttribute("color","#1f1f1f"); body.setAttribute("align","left");
-    body.setAttribute("wrap-count",34); body.setAttribute("width",1.8);
+    body.setAttribute("color","#1f1f1f"); body.setAttribute("align","left"); body.setAttribute("wrap-count",34); body.setAttribute("width",1.8);
     body.setAttribute("position",`${-spec.size.w/2+0.12} ${spec.size.h/2-0.30} 0.03`); g.appendChild(body);
-
     anchorEl.appendChild(g);
     return g;
   }
 
-  /* ---------- render: always at most 2 ---------- */
   let rendered=[];
   function clearRendered(){ rendered.forEach(e=>e.remove()); rendered=[]; }
   function renderTwo(){
     clearRendered();
-    // pick 2: static first, then latest visitor if present
     const chosen = STATIC_BUBBLES.slice(0,2);
     if (dynamic[0]) {
-      // place visitor bubble at bottom, push curator up
-      chosen[1] = { id: dynamic[0].id, title: "Visitor",
-                    text: dynamic[0].text, pos: POS_BOTTOM, size: SIZE_BOTTOM };
+      chosen[1] = { id: dynamic[0].id, title:"Visitor", text:dynamic[0].text, pos:POS_BOTTOM, size:SIZE_BOTTOM };
     }
     chosen.slice(0,MAX_BUBBLES).forEach(spec=> rendered.push(addBubble(spec)));
+    relockIfFrozen(); // if we were already locked to screen
   }
 
-  /* ---------- composer (adds/keeps max 1 dynamic) ---------- */
+  /* ---------- lock bubbles to the camera (screen-fixed) ---------- */
+  let frozen=false;
+  function lockToScreen(){
+    if (frozen) return; frozen=true;
+    try{ anchorEl.removeAttribute('mindar-image-target'); }catch{}
+    relockIfFrozen();
+  }
+  function relockIfFrozen(){
+    if (!frozen) return;
+    let holder=document.getElementById('ui-holder');
+    if(!holder){ holder=document.createElement('a-entity'); holder.id='ui-holder'; camEl.appendChild(holder); }
+    const DEPTH=-1; // meters in front of camera
+    const slots=[ {x:-0.35,y:0.25,z:DEPTH}, {x:0,y:-0.30,z:DEPTH} ]; // top-left, bottom-center
+    rendered.forEach((g,i)=>{
+      const p=slots[i] || slots[slots.length-1];
+      g.setAttribute('position',`${p.x} ${p.y} ${p.z}`);
+      g.setAttribute('animation','property: position; dir: alternate; dur:2200; easing:easeInOutSine; loop:true; to: '
+        + p.x + ' ' + (p.y+0.02) + ' ' + p.z);
+      holder.appendChild(g);
+    });
+  }
+
+  /* ---------- composer ---------- */
   const composer=document.getElementById('composer');
   const compInput=document.getElementById('compInput');
   const compPost=document.getElementById('compPost');
   const compSend=document.getElementById('compSend');
   const compClose=document.getElementById('compClose');
   const chipbar=document.getElementById('chipbar');
-  const fab=document.getElementById('fab');
-  const hint=document.getElementById('hint');
-  const toast=document.getElementById('toast');
 
-  function showToast(m){ toast.textContent=m; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),1400); }
   function openComposer(){ composer.classList.add('show'); compInput.focus(); }
   function closeComposer(){ composer.classList.remove('show'); }
 
@@ -195,36 +205,21 @@
     compInput.value="";
     dynamic = [{id:"dyn-"+Date.now(), text, ts:Date.now()}]; // keep only the latest one
     save('comments', dynamic);
-    renderTwo(); closeComposer(); showToast('Saved on this device');
+    renderTwo();
+    closeComposer(); showToast('Saved on this device');
   });
-
-  /* ---------- freeze tracking after first lock ---------- */
-  let frozen=false;
-  function freezeTracking(){
-    if (frozen) return;
-    frozen=true;
-    // clone anchor world transform to a sibling holder, move bubbles there, remove tracking component
-    const THREE = AFRAME.THREE;
-    const holder=document.createElement('a-entity'); holder.id='locked-holder';
-    anchorEl.sceneEl.appendChild(holder);
-    holder.object3D.matrixAutoUpdate=false;
-    holder.object3D.matrix.copy(anchorEl.object3D.matrixWorld);
-    // move rendered nodes
-    rendered.forEach(n=> holder.appendChild(n));
-    // prevent further anchor updates (but keep camera video running)
-    try{ anchorEl.removeAttribute('mindar-image-target'); }catch{}
-  }
 
   /* ---------- AR events ---------- */
   let seeded=false;
   anchorEl.addEventListener('targetFound', ()=>{
     hint.style.display='none'; fab.style.display='block';
-    if (!seeded){ seeded=true; renderTwo(); setTimeout(freezeTracking, FREEZE_AFTER_MS); }
+    if (!seeded){ seeded=true; renderTwo(); setTimeout(lockToScreen, 500); }
   });
-  anchorEl.addEventListener('targetLost',  ()=>{
-    // we ignore targetLost after freeze, so bubbles stay stable on screen
-    if (!frozen){ hint.style.display='block'; fab.style.display='none'; }
-  });
+  anchorEl.addEventListener('targetLost', ()=>{ /* ignore after lock; keep bubbles on screen */ });
+
+  // tiny toast helper
+  function toastOnce(){ showToast('Locked — bubbles stay on screen'); }
+  setTimeout(()=>{ /* no-op, reserved */ },0);
 </script>
 </body>
 </html>
