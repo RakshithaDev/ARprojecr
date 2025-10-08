@@ -1,32 +1,92 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>AR Artwork — Styled Bubbles (Mac-safe)</title>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>AR Artwork — Bubbles + Composer</title>
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 <style>
   html,body{margin:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto}
   .a-enter-vr,.a-enter-vr-button,.a-enter-ar,.a-enter-ar-button{display:none!important}
+
+  /* hint + orb */
   #hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);
-        color:#fff;padding:6px 10px;border-radius:999px;z-index:3}
+        color:#fff;padding:6px 10px;border-radius:999px;z-index:5}
   #fab{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);width:68px;height:68px;border-radius:50%;
        background:radial-gradient(120% 120% at 30% 30%, #ffb2d9, #ffcf9a 55%, #b6c8ff);
        box-shadow:0 16px 40px rgba(255,160,200,.45), 0 6px 18px rgba(0,0,0,.35);
-       border:1px solid rgba(255,255,255,.35); z-index:3; display:none}
+       border:1px solid rgba(255,255,255,.35); z-index:5; display:none}
   #toast{position:fixed;left:50%;bottom:110px;transform:translateX(-50%) translateY(18px);
-         background:rgba(15,18,26,.92);color:#fff;border:1px solid #263044;
-         padding:10px 14px;border-radius:12px;opacity:0;transition:.25s;z-index:4}
+         background:rgba(15,18,26,.92);color:#fff;border:1px solid #263044;padding:10px 14px;border-radius:12px;
+         opacity:0;transition:.25s;z-index:6}
   #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* FULL-SCREEN COMPOSER (your Figma) */
+  #composer{
+    position:fixed; inset:0; z-index:10; display:none;
+    background:linear-gradient(140deg,#ffd7bd 15%,#ffc6e0 85%);
+    padding:env(safe-area-inset-top) 16px calc(20px + env(safe-area-inset-bottom)) 16px;
+  }
+  #composer.show{display:block; animation:fadeIn .18s ease}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  .comp-wrap{max-width:560px; margin:0 auto; height:100%; display:flex; flex-direction:column}
+  .comp-head{padding:18px 6px 8px; text-align:center; font-weight:700; font-size:22px; color:#2b232b}
+  .pill{
+    display:flex; align-items:center; gap:8px;
+    background:rgba(255,255,255,.78); border:1px solid rgba(0,0,0,.08);
+    box-shadow:0 6px 18px rgba(0,0,0,.08) inset;
+    border-radius:18px; padding:10px 12px; margin:10px 0;
+  }
+  .pill input{flex:1; border:0; outline:none; background:transparent; font-size:15px; color:#2b232b}
+  .iconbtn{border:0;background:transparent;font-size:18px;line-height:1;opacity:.75}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .chip{padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.08);color:#503d49;font-size:12px;border:1px solid rgba(0,0,0,.06)}
+  .chip.touch{cursor:pointer}
+  .actions{margin-top:auto; display:flex; gap:10px; justify-content:center; padding:12px 0}
+  .btn{
+    padding:12px 16px;border-radius:14px;border:0;cursor:pointer;font-weight:700;
+    background:#2b232b;color:#fff; box-shadow:0 8px 18px rgba(0,0,0,.15)
+  }
+  .btn.secondary{background:#ffffffaa; color:#2b232b}
 </style>
 </head>
 <body>
 
 <div id="hint">Point your camera at the artwork</div>
 <div id="fab" aria-label="Share your thoughts"></div>
-<div id="toast">Coming soon…</div>
+<div id="toast">Saved</div>
 
-<!-- CHANGE this path to your actual .mind file -->
+<!-- FULL-SCREEN COMPOSER -->
+<div id="composer" role="dialog" aria-modal="true">
+  <div class="comp-wrap">
+    <div class="comp-head">What’s on your mind?</div>
+
+    <div class="pill">
+      <input id="compInput" placeholder="What do you feel?" maxlength="300" />
+      <!-- tiny icons (visual only) -->
+      <button class="iconbtn" title="privacy">⋯</button>
+      <button class="iconbtn" title="send" id="compSend">➤</button>
+    </div>
+
+    <div class="chips" id="chipbar">
+      <div class="chip touch">Happy</div><div class="chip touch">Grateful</div>
+      <div class="chip touch">Curious</div><div class="chip touch">Calm</div>
+      <div class="chip touch">Excited</div><div class="chip touch">Inspired</div>
+    </div>
+
+    <!-- preview / helper tags -->
+    <div class="chips" style="margin-top:14px;opacity:.85">
+      <div class="chip">❤️</div><div class="chip">💬</div><div class="chip">↗︎</div>
+    </div>
+
+    <div class="actions">
+      <button class="btn secondary" id="compClose">Cancel</button>
+      <button class="btn" id="compPost">Post</button>
+    </div>
+  </div>
+</div>
+
+<!-- AR scene (CHANGE path to your .mind if needed) -->
 <a-scene mindar-image="imageTargetSrc: ./targets%20(6).mind"
          renderer="colorManagement:true, physicallyCorrectLights:false"
          vr-mode-ui="enabled:false"
@@ -37,11 +97,11 @@
 </a-scene>
 
 <script>
-  /* ----- Hard-coded bubble specs (positions/sizes like your Figma) ----- */
-  const BUBBLES = [
+  /* ---------- BUBBLES (hard-coded + user adds) ---------- */
+  const STATIC_BUBBLES = [
     {
       title: "Zen – the artist",
-      text:  `"This piece explores the interplay ."`,
+      text:  `"This piece explores."`,
       pos:   {x:-0.22, y: 0.25, z:0.02},
       width: 0.98, height: 0.42, palette: 0
     },
@@ -52,129 +112,125 @@
       width: 1.12, height: 0.46, palette: 1
     }
   ];
+  const ART_ID="art1";
+  const K=(n)=>`webar:${ART_ID}:${n}`;
+  const load=(k,f)=>{try{return JSON.parse(localStorage.getItem(K(k))||JSON.stringify(f));}catch{return f;}};
+  const save=(k,v)=>localStorage.setItem(K(k),JSON.stringify(v));
+  let dynamic = load('comments', []); // [{text, ts}]
 
-  /* ----- Canvas-drawn bubble (PNG) — most compatible across devices ----- */
-  const palettes = [
-    ["#FFE1C9", "#FFC9E6"], // peach→rose
-    ["#F1F5FF", "#DFE5FF"], // soft blue
-    ["#E9FFF5", "#CFEFE3"]  // mint
-  ];
-  const bubbleCache = {};
-  function bubblePNG(pIndex, w=900, h=380){
-    const key = pIndex+"|"+w+"|"+h; if(bubbleCache[key]) return bubbleCache[key];
-    const [c1,c2] = palettes[pIndex % palettes.length];
-    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-    const ctx = cv.getContext("2d");
-
-    // gradient fill
-    const g = ctx.createLinearGradient(0,0,0,h);
-    g.addColorStop(0, c1); g.addColorStop(1, c2);
-    ctx.fillStyle = g; ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 10;
-
-    // rounded rect
-    const r = 36, x=20, y=20, ww = w-40, hh = 300;
-    ctx.beginPath();
-    ctx.moveTo(x+r,y);
-    ctx.arcTo(x+ww,y,x+ww,y+r,r);
-    ctx.arcTo(x+ww,y+hh,x+ww-r,y+hh,r);
-    ctx.arcTo(x,y+hh,x,y+hh-r,r);
-    ctx.arcTo(x,y,x+r,y,r);
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-
-    // tail
-    ctx.beginPath();
-    ctx.moveTo(w/2-40, y+hh);
-    ctx.lineTo(w/2+40, y+hh);
-    ctx.lineTo(w/2,   y+hh+40);
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-
-    return bubbleCache[key] = cv.toDataURL("image/png");
+  /* ---------- Canvas bubble texture (Mac-safe) ---------- */
+  const palettes=[["#FFE1C9","#FFC9E6"],["#F1F5FF","#DFE5FF"],["#E9FFF5","#CFEFE3"]];
+  const cache={};
+  function bubblePNG(pIndex,w=900,h=380){
+    const key=pIndex+"|"+w+"|"+h; if(cache[key]) return cache[key];
+    const [c1,c2]=palettes[pIndex%palettes.length];
+    const cv=document.createElement("canvas"); cv.width=w; cv.height=h; const ctx=cv.getContext("2d");
+    const g=ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,c1); g.addColorStop(1,c2);
+    ctx.fillStyle=g; ctx.strokeStyle="rgba(255,255,255,.35)"; ctx.lineWidth=10;
+    const r=36,x=20,y=20,ww=w-40,hh=300;
+    ctx.beginPath(); ctx.moveTo(x+r,y);
+    ctx.arcTo(x+ww,y,x+ww,y+r,r); ctx.arcTo(x+ww,y+hh,x+ww-r,y+hh,r);
+    ctx.arcTo(x,y+hh,x,y+hh-r,r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(w/2-40,y+hh); ctx.lineTo(w/2+40,y+hh); ctx.lineTo(w/2,y+hh+40); ctx.closePath(); ctx.fill(); ctx.stroke();
+    return cache[key]=cv.toDataURL("image/png");
   }
 
-  /* ----- small vector icons as inline images ----- */
-  const icons = {
-    heart:  "data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 21s-6.7-4.5-9.3-7.1A6 6 0 1 1 12 6a6 6 0 1 1 9.3 7.9C18.7 16.5 12 21 12 21z' fill='#fff'/></svg>`),
+  const icons={
+    heart:"data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 21s-6.7-4.5-9.3-7.1A6 6 0 1 1 12 6a6 6 0 1 1 9.3 7.9C18.7 16.5 12 21 12 21z' fill='#fff'/></svg>`),
     comment:"data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 4h16v12H8l-4 4V4z' fill='#fff'/></svg>`),
-    share:  "data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M13 5l6 6-6 6v-4H7v-4h6V5z' fill='#fff'/></svg>`)
+    share:"data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M13 5l6 6-6 6v-4H7v-4h6V5z' fill='#fff'/></svg>`)
   };
 
-  function addIconRow(parent, spec){
-    const baseX = -spec.width/2 + 0.12, y = -spec.height/2 + 0.10, z = 0.031;
-    const gap = 0.16, size = 0.10;
-    const make = (src, x) => {
-      const img = document.createElement("a-image");
-      img.setAttribute("src", src);
-      img.setAttribute("shader","flat");
+  function addIconRow(parent,spec){
+    const baseX=-spec.width/2+0.12, y=-spec.height/2+0.10, z=0.031, gap=0.16, size=0.10;
+    const mk=(src,x)=>{const img=document.createElement("a-image");
+      img.setAttribute("src",src); img.setAttribute("shader","flat");
       img.setAttribute("material","transparent:true; alphaTest:0.01; side:double");
-      img.setAttribute("width", size);
-      img.setAttribute("height", size);
-      img.setAttribute("position", `${x} ${y} ${z}`);
-      parent.appendChild(img);
-    };
-    make(icons.heart,   baseX + 0.00);
-    make(icons.comment, baseX + gap);
-    make(icons.share,   baseX + gap*2);
+      img.setAttribute("width",size); img.setAttribute("height",size);
+      img.setAttribute("position",`${x} ${y} ${z}`); parent.appendChild(img);};
+    mk(icons.heart,baseX+0); mk(icons.comment,baseX+gap); mk(icons.share,baseX+gap*2);
   }
 
-  /* ----- Build one bubble ----- */
-  function addBubble(anchor, spec){
-    const g = document.createElement("a-entity");
-    g.setAttribute("position", `${spec.pos.x} ${spec.pos.y} ${spec.pos.z}`);
-
-    // Background PNG from canvas
-    const bg = document.createElement("a-image");
-    bg.setAttribute("src", bubblePNG(spec.palette));
-    bg.setAttribute("width", spec.width);
-    bg.setAttribute("height", spec.height);
-    bg.setAttribute("shader", "flat");
-    bg.setAttribute("material", "transparent:true; alphaTest:0.01; side:double");
+  function addBubble(anchor,spec){
+    const g=document.createElement("a-entity");
+    g.setAttribute("position",`${spec.pos.x} ${spec.pos.y} ${spec.pos.z}`);
+    const bg=document.createElement("a-image");
+    bg.setAttribute("src",bubblePNG(spec.palette||0));
+    bg.setAttribute("width",spec.width); bg.setAttribute("height",spec.height);
+    bg.setAttribute("shader","flat"); bg.setAttribute("material","transparent:true; alphaTest:0.01; side:double");
     g.appendChild(bg);
-
-    // Title
-    const title = document.createElement("a-text");
-    title.setAttribute("value", spec.title);
-    title.setAttribute("color", "#ffffff");
-    title.setAttribute("align", "left");
-    title.setAttribute("width", 1.8);
-    title.setAttribute("position", `${-spec.width/2 + 0.12} ${spec.height/2 - 0.12} 0.03`);
-    g.appendChild(title);
-
-    // Body
-    const body = document.createElement("a-text");
-    body.setAttribute("value", spec.text);
-    body.setAttribute("color", "#f0ecf3");
-    body.setAttribute("align", "left");
-    body.setAttribute("wrap-count", 34);
-    body.setAttribute("width", 1.8);
-    body.setAttribute("position", `${-spec.width/2 + 0.12} ${spec.height/2 - 0.30} 0.03`);
-    g.appendChild(body);
-
-    addIconRow(g, spec);
-
-    // Soft bob
-    g.setAttribute("animation", `property: position; dir: alternate; dur:2200; easing:easeInOutSine; loop:true; to: ${spec.pos.x} ${spec.pos.y + 0.02} ${spec.pos.z}`);
-
+    const title=document.createElement("a-text");
+    title.setAttribute("value",spec.title||"");
+    title.setAttribute("color","#fff"); title.setAttribute("align","left"); title.setAttribute("width",1.8);
+    title.setAttribute("position",`${-spec.width/2+0.12} ${spec.height/2-0.12} 0.03`); g.appendChild(title);
+    const body=document.createElement("a-text");
+    body.setAttribute("value",spec.text||"");
+    body.setAttribute("color","#f0ecf3"); body.setAttribute("align","left"); body.setAttribute("wrap-count",34); body.setAttribute("width",1.8);
+    body.setAttribute("position",`${-spec.width/2+0.12} ${spec.height/2-0.30} 0.03`); g.appendChild(body);
+    addIconRow(g,spec);
+    g.setAttribute("animation",`property: position; dir: alternate; dur:2200; easing:easeInOutSine; loop:true; to: ${spec.pos.x} ${spec.pos.y+0.02} ${spec.pos.z}`);
     anchor.appendChild(g);
   }
 
-  /* ----- Show bubbles when target is found ----- */
-  const anchor = document.getElementById('anchor');
-  const hint   = document.getElementById('hint');
-  const fab    = document.getElementById('fab');
-  const toast  = document.getElementById('toast');
+  /* ---------- Show bubbles when target is found ---------- */
+  const anchorEl=document.getElementById('anchor');
+  const hint=document.getElementById('hint');
+  const fab=document.getElementById('fab');
+  const toast=document.getElementById('toast');
 
-  anchor.addEventListener('targetFound', ()=>{
-    hint.style.display='none';
-    fab.style.display='block';
-    if(!anchor.__seeded){ BUBBLES.forEach(b=>addBubble(anchor,b)); anchor.__seeded=true; }
-  });
-  anchor.addEventListener('targetLost', ()=>{ hint.style.display='block'; fab.style.display='none'; });
+  function seedStaticOnce(){
+    if(anchorEl.__seeded) return;
+    STATIC_BUBBLES.forEach(b=>addBubble(anchorEl,b));
+    dynamic.forEach((d,i)=> addBubble(anchorEl,{
+      title: d.name? d.name : "Visitor",
+      text:  d.text,
+      pos:   {x:(i%2?0.22:-0.18), y:-0.05-(i*0.08), z:0.02},
+      width: 0.96, height: 0.40, palette: 2
+    }));
+    anchorEl.__seeded=true;
+  }
 
-  fab.addEventListener('click', ()=>{
-    toast.textContent="Share your thoughts — coming soon";
-    toast.classList.add('show');
-    setTimeout(()=>toast.classList.remove('show'),1600);
+  anchorEl.addEventListener('targetFound', ()=>{ hint.style.display='none'; fab.style.display='block'; seedStaticOnce(); });
+  anchorEl.addEventListener('targetLost',  ()=>{ hint.style.display='block'; fab.style.display='none'; });
+
+  /* ---------- COMPOSER logic ---------- */
+  const composer=document.getElementById('composer');
+  const compInput=document.getElementById('compInput');
+  const compPost=document.getElementById('compPost');
+  const compSend=document.getElementById('compSend');
+  const compClose=document.getElementById('compClose');
+  const chipbar=document.getElementById('chipbar');
+
+  function openComposer(){ composer.classList.add('show'); compInput.focus(); }
+  function closeComposer(){ composer.classList.remove('show'); }
+
+  fab.addEventListener('click', openComposer);
+  compClose.addEventListener('click', closeComposer);
+  compSend.addEventListener('click', ()=>compPost.click());
+
+  chipbar.addEventListener('click', (e)=>{
+    if(!e.target.classList.contains('chip')) return;
+    const t=e.target.textContent.trim();
+    compInput.value = compInput.value ? (compInput.value + ' ' + t) : t;
+    compInput.focus();
   });
+
+  compPost.addEventListener('click', ()=>{
+    const text=(compInput.value||"").trim(); if(!text){ showToast('Type your thought first'); return; }
+    compInput.value="";
+    // save locally + render one new bubble
+    const entry={text, ts:Date.now()};
+    dynamic.unshift(entry); save('comments', dynamic);
+    addBubble(anchorEl,{
+      title:"Visitor",
+      text, width:0.96, height:0.40, palette:2,
+      pos:{x:0, y:-0.10, z:0.02}
+    });
+    closeComposer();
+    showToast('Saved on this device');
+  });
+
+  function showToast(m){ toast.textContent=m; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),1400); }
 </script>
 </body>
 </html>
