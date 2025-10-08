@@ -2,11 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>AR Artwork — Styled Bubbles (Step 1 fixed)</title>
+<title>AR Artwork — Styled Bubbles (Mac-safe)</title>
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 <style>
-  :root{ --t:#fff; --muted:#efeaf2; }
   html,body{margin:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto}
   .a-enter-vr,.a-enter-vr-button,.a-enter-ar,.a-enter-ar-button{display:none!important}
   #hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);
@@ -27,72 +26,86 @@
 <div id="fab" aria-label="Share your thoughts"></div>
 <div id="toast">Coming soon…</div>
 
-<!-- CHANGE THIS PATH to your .mind file -->
+<!-- CHANGE this path to your actual .mind file -->
 <a-scene mindar-image="imageTargetSrc: ./targets%20(6).mind"
-         renderer="colorManagement:true, physicallyCorrectLights:true"
+         renderer="colorManagement:true, physicallyCorrectLights:false"
          vr-mode-ui="enabled:false"
          device-orientation-permission-ui="enabled:true"
          embedded id="scene">
-  <a-assets id="assets"></a-assets>
   <a-camera look-controls="enabled:false"></a-camera>
   <a-entity id="anchor" mindar-image-target="targetIndex: 0"></a-entity>
 </a-scene>
 
 <script>
-  /* ------- Hard-coded bubbles (text + positions like your Figma) ------- */
+  /* ----- Hard-coded bubble specs (positions/sizes like your Figma) ----- */
   const BUBBLES = [
     {
       title: "Zen – the artist",
-      text:  `"This piece looks awesome."`,
+      text:  `"This piece explores the interplay of displacement, everyday objects and nostalgic wonder."`,
       pos:   {x:-0.22, y: 0.25, z:0.02},
       width: 0.98, height: 0.42, palette: 0
     },
     {
       title: "Curator’s Note",
-      text:  `"A quiet yet defiant "`,
+      text:  `"A quiet yet defiant work that turns ordinary retail bags into a field for memory, resilience and becoming."`,
       pos:   {x: 0.00, y:-0.28, z:0.02},
       width: 1.12, height: 0.46, palette: 1
     }
   ];
 
-  /* ------- SVG helpers (no filters; very compatible) ------- */
-  const gradients = [
+  /* ----- Canvas-drawn bubble (PNG) — most compatible across devices ----- */
+  const palettes = [
     ["#FFE1C9", "#FFC9E6"], // peach→rose
     ["#F1F5FF", "#DFE5FF"], // soft blue
     ["#E9FFF5", "#CFEFE3"]  // mint
   ];
   const bubbleCache = {};
-  function bubbleDataURL(p){
-    const [a,b]=gradients[p%gradients.length];
-    const key=a+"|"+b; if(bubbleCache[key]) return bubbleCache[key];
-    const svg = `
-    <svg xmlns='http://www.w3.org/2000/svg' width='900' height='380' viewBox='0 0 900 380'>
-      <defs>
-        <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
-          <stop offset='0%' stop-color='${a}'/><stop offset='100%' stop-color='${b}'/>
-        </linearGradient>
-      </defs>
-      <rect x='20' y='20' width='860' height='300' rx='36' fill='url(#g)' fill-opacity='0.96'/>
-      <path d='M 460 320 L 520 320 L 490 360 Z' fill='url(#g)' fill-opacity='0.96'/>
-      <rect x='20' y='20' width='860' height='300' rx='36' fill='none' stroke='#ffffff' stroke-opacity='0.35' stroke-width='5'/>
-      <path d='M 460 320 L 520 320 L 490 360 Z' fill='none' stroke='#ffffff' stroke-opacity='0.35' stroke-width='5' stroke-linejoin='round'/>
-    </svg>`;
-    return bubbleCache[key] = "data:image/svg+xml;utf8,"+encodeURIComponent(svg);
+  function bubblePNG(pIndex, w=900, h=380){
+    const key = pIndex+"|"+w+"|"+h; if(bubbleCache[key]) return bubbleCache[key];
+    const [c1,c2] = palettes[pIndex % palettes.length];
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    const ctx = cv.getContext("2d");
+
+    // gradient fill
+    const g = ctx.createLinearGradient(0,0,0,h);
+    g.addColorStop(0, c1); g.addColorStop(1, c2);
+    ctx.fillStyle = g; ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 10;
+
+    // rounded rect
+    const r = 36, x=20, y=20, ww = w-40, hh = 300;
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+ww,y,x+ww,y+r,r);
+    ctx.arcTo(x+ww,y+hh,x+ww-r,y+hh,r);
+    ctx.arcTo(x,y+hh,x,y+hh-r,r);
+    ctx.arcTo(x,y,x+r,y,r);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    // tail
+    ctx.beginPath();
+    ctx.moveTo(w/2-40, y+hh);
+    ctx.lineTo(w/2+40, y+hh);
+    ctx.lineTo(w/2,   y+hh+40);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+
+    return bubbleCache[key] = cv.toDataURL("image/png");
   }
 
-  /* ------- Tiny vector icons as images (emoji don’t render in A-Frame text) ------- */
+  /* ----- small vector icons as inline images ----- */
   const icons = {
-    heart:  "data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='64' height='64'><path d='M12 21s-6.7-4.5-9.3-7.1A6 6 0 1 1 12 6a6 6 0 1 1 9.3 7.9C18.7 16.5 12 21 12 21z' fill='white' fill-opacity='.9'/></svg>`),
-    comment:"data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='64' height='64'><path d='M4 4h16v12H8l-4 4V4z' fill='white' fill-opacity='.9'/></svg>`),
-    share:  "data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='64' height='64'><path d='M13 5l6 6-6 6v-4H7v-4h6V5z' fill='white' fill-opacity='.9'/></svg>`)
+    heart:  "data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M12 21s-6.7-4.5-9.3-7.1A6 6 0 1 1 12 6a6 6 0 1 1 9.3 7.9C18.7 16.5 12 21 12 21z' fill='#fff'/></svg>`),
+    comment:"data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 4h16v12H8l-4 4V4z' fill='#fff'/></svg>`),
+    share:  "data:image/svg+xml;utf8,"+encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M13 5l6 6-6 6v-4H7v-4h6V5z' fill='#fff'/></svg>`)
   };
 
   function addIconRow(parent, spec){
-    const baseX = -spec.width/2 + 0.12, y = -spec.height/2 + 0.10, z = 0.02;
+    const baseX = -spec.width/2 + 0.12, y = -spec.height/2 + 0.10, z = 0.031;
     const gap = 0.16, size = 0.10;
     const make = (src, x) => {
       const img = document.createElement("a-image");
       img.setAttribute("src", src);
+      img.setAttribute("shader","flat");
+      img.setAttribute("material","transparent:true; alphaTest:0.01; side:double");
       img.setAttribute("width", size);
       img.setAttribute("height", size);
       img.setAttribute("position", `${x} ${y} ${z}`);
@@ -103,17 +116,18 @@
     make(icons.share,   baseX + gap*2);
   }
 
-  /* ------- Build one bubble ------- */
+  /* ----- Build one bubble ----- */
   function addBubble(anchor, spec){
     const g = document.createElement("a-entity");
     g.setAttribute("position", `${spec.pos.x} ${spec.pos.y} ${spec.pos.z}`);
 
-    // Background image (with fallback color if SVG fails)
+    // Background PNG from canvas
     const bg = document.createElement("a-image");
-    bg.setAttribute("src", bubbleDataURL(spec.palette));
+    bg.setAttribute("src", bubblePNG(spec.palette));
     bg.setAttribute("width", spec.width);
     bg.setAttribute("height", spec.height);
-    bg.setAttribute("material", "transparent:true; side:double; color:#ffd7bd; opacity:0.96");
+    bg.setAttribute("shader", "flat");
+    bg.setAttribute("material", "transparent:true; alphaTest:0.01; side:double");
     g.appendChild(bg);
 
     // Title
@@ -121,30 +135,29 @@
     title.setAttribute("value", spec.title);
     title.setAttribute("color", "#ffffff");
     title.setAttribute("align", "left");
-    title.setAttribute("width", 1.7);
+    title.setAttribute("width", 1.8);
     title.setAttribute("position", `${-spec.width/2 + 0.12} ${spec.height/2 - 0.12} 0.03`);
     g.appendChild(title);
 
     // Body
     const body = document.createElement("a-text");
     body.setAttribute("value", spec.text);
-    body.setAttribute("color", "#efeaf2");
+    body.setAttribute("color", "#f0ecf3");
     body.setAttribute("align", "left");
     body.setAttribute("wrap-count", 34);
-    body.setAttribute("width", 1.7);
+    body.setAttribute("width", 1.8);
     body.setAttribute("position", `${-spec.width/2 + 0.12} ${spec.height/2 - 0.30} 0.03`);
     g.appendChild(body);
 
-    // Icon row
     addIconRow(g, spec);
 
-    // Subtle bob animation
+    // Soft bob
     g.setAttribute("animation", `property: position; dir: alternate; dur:2200; easing:easeInOutSine; loop:true; to: ${spec.pos.x} ${spec.pos.y + 0.02} ${spec.pos.z}`);
 
     anchor.appendChild(g);
   }
 
-  /* ------- Show UI on track; hide when lost ------- */
+  /* ----- Show bubbles when target is found ----- */
   const anchor = document.getElementById('anchor');
   const hint   = document.getElementById('hint');
   const fab    = document.getElementById('fab');
