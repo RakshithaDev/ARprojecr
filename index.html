@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>AR Artwork — Screen-Locked Bubbles + Thread</title>
+<title>AR Artwork — Bubbles + Thread + Share Options</title>
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 <style>
@@ -17,7 +17,7 @@
        box-shadow:0 16px 40px rgba(255,160,200,.45), 0 6px 18px rgba(0,0,0,.35);
        border:1px solid rgba(255,255,255,.35); z-index:7; display:none}
 
-  /* DOM bubbles (fixed on screen) */
+  /* Fixed DOM bubbles */
   #bubbles{position:fixed;inset:0;pointer-events:none;z-index:6;display:none}
   .bubble{
     position:absolute; max-width:min(90vw,620px); color:#1a1a1a; pointer-events:auto;
@@ -25,7 +25,7 @@
     background:linear-gradient(180deg,#fff7f0 0%, #ffe9f6 100%); box-shadow:0 20px 50px rgba(0,0,0,.28);
     border:1px solid rgba(255,255,255,.6)
   }
-  .bubble:after{ /* tail */
+  .bubble:after{
     content:""; position:absolute; left:50%; transform:translateX(-50%); bottom:-16px;
     width:34px; height:18px; background:linear-gradient(180deg,#fff7f0,#ffe9f6);
     clip-path:polygon(0 0,100% 0,50% 100%); filter:drop-shadow(0 8px 12px rgba(0,0,0,.15));
@@ -40,8 +40,8 @@
   .icon.liked{background:#ff99c51f; border-color:#ff99c560}
   .icon span{font-size:14px}
   /* positions */
-  #bubbleTop{top:10%; left:6%}
-  #bubbleBottom{bottom:12%; left:50%; transform:translateX(-50%)}
+  #bubbleTop{top:10%; left:6%}              /* Visitor (name/anon) */
+  #bubbleBottom{bottom:12%; left:50%; transform:translateX(-50%)} /* Curator */
 
   /* Composer sheet */
   #composer{position:fixed;inset:0;display:none;z-index:10;
@@ -60,7 +60,7 @@
   .btn.primary{background:#2b232b;color:#fff}
   .btn.secondary{background:#ffffffcc;color:#2b232b}
 
-  /* Thread overlay (stacked comments) */
+  /* Thread overlay */
   #thread{position:fixed;left:0;right:0;bottom:96px;z-index:8;display:none;pointer-events:auto}
   .threadWrap{max-width:680px;margin:0 auto;padding:0 12px;display:flex;flex-direction:column;gap:12px}
   .tCard{
@@ -75,6 +75,20 @@
   .tLike{margin-left:auto;background:#ffffff22;border:1px solid #ffffff44;border-radius:12px;padding:8px 10px;cursor:pointer}
   .tBar{display:flex;justify-content:flex-end;gap:10px;margin:6px auto 0;max-width:680px;padding:0 12px}
   .tBtn{background:#111a22;color:#fff;border:1px solid #2a3342;border-radius:12px;padding:8px 12px;cursor:pointer}
+
+  /* Share Options modal (name / anonymous) */
+  #shareModal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:12;align-items:center;justify-content:center}
+  #shareModal.show{display:flex}
+  .sheet{width:min(92vw,560px);border-radius:22px;overflow:hidden;background:rgba(255,255,255,.92);
+         box-shadow:0 30px 70px rgba(0,0,0,.45);backdrop-filter:blur(10px);border:1px solid #ffffffaa}
+  .sheetHead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(180deg,#ffe1c9,#f7d3e9)}
+  .sheetBody{padding:16px}
+  .xBtn{border:0;background:#00000010;border:1px solid #00000012;border-radius:999px;width:28px;height:28px;cursor:pointer}
+  .nameInput{width:100%;padding:12px 14px;border-radius:14px;border:1px solid #ddd;background:#fff;font-size:16px;margin:8px 0 4px}
+  .sheetActions{display:flex;gap:10px;justify-content:center;margin-top:10px}
+  .sBtn{padding:12px 16px;border-radius:14px;border:0;font-weight:700;cursor:pointer}
+  .sPrimary{background:#2b232b;color:#fff}
+  .sGhost{background:#ffffffcc;color:#2b232b;border:1px solid #00000022}
 </style>
 </head>
 <body>
@@ -83,32 +97,33 @@
 
 <!-- Fixed bubbles -->
 <div id="bubbles">
-  <!-- Top (artist) -->
+  <!-- Top = latest visitor (name/anon). Defaults to a placeholder until first post -->
   <div id="bubbleTop" class="bubble">
-    <h3>Zen – the artist</h3>
-    <p>“This piece explores the interplay of displacement, everyday objects and nostalgic wonder.”</p>
+    <h3 id="topTitle">Anonymous</h3>
+    <p id="topText">“It brings me joy because it makes me think of time with my family.”</p>
     <div class="icons">
       <div id="likeTop" class="icon" title="Like"><span>❤️</span></div>
-      <div class="icon" title="Comment" id="cTop"><span>💬</span></div>
+      <div class="icon" title="Comments" id="cTop"><span>💬</span></div>
       <div class="icon" title="Share" id="sTop"><span>↗︎</span></div>
     </div>
   </div>
-  <!-- Bottom (curator / latest visitor) -->
+
+  <!-- Bottom = Curator -->
   <div id="bubbleBottom" class="bubble">
     <h3>Curator’s Note</h3>
-    <p id="bottomText">“A quiet yet defiant work that turns ordinary retail bags into a field for memory, resilience and becoming.”</p>
+    <p>“A quiet yet defiant work that turns ordinary retail bags into a vivid testament of resilience and belonging.”</p>
     <div class="icons">
       <div id="likeBottom" class="icon" title="Like"><span>❤️</span></div>
-      <div class="icon" title="Comment" id="cBottom"><span>💬</span></div>
+      <div class="icon" title="Comments" id="cBottom"><span>💬</span></div>
       <div class="icon" title="Share" id="sBottom"><span>↗︎</span></div>
     </div>
   </div>
 </div>
 
-<!-- floating action button to open composer -->
+<!-- FAB to open composer -->
 <div id="fab" aria-label="Share your thoughts"></div>
 
-<!-- Thread overlay (stacked comments) -->
+<!-- Thread overlay -->
 <div id="thread">
   <div class="threadWrap" id="threadList"></div>
   <div class="tBar">
@@ -135,6 +150,24 @@
   </div>
 </div>
 
+<!-- Share Options (name / anonymous) -->
+<div id="shareModal" aria-modal="true" role="dialog">
+  <div class="sheet">
+    <div class="sheetHead">
+      <strong>How would you like to share?</strong>
+      <button id="shareClose" class="xBtn">✕</button>
+    </div>
+    <div class="sheetBody">
+      <label for="shareName" style="font-weight:600;">You can add your name or share it anonymously.</label>
+      <input id="shareName" class="nameInput" placeholder="Add my name" />
+      <div class="sheetActions">
+        <button id="btnAnon" class="sBtn sGhost">Anonymous</button>
+        <button id="btnWithName" class="sBtn sPrimary">Post</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- AR scene -->
 <a-scene id="scene"
          mindar-image="imageTargetSrc: ./targets%20(7).mind"
@@ -147,20 +180,24 @@
 </a-scene>
 
 <script>
-  /* ====== CONFIG ====== */
-  const TARGET_PATH = "./targets%20(7).mind"; // change if your .mind path differs
+  /* ===== CONFIG ===== */
+  const TARGET_PATH = "./targets%20(7).mind";
   document.getElementById("scene").setAttribute("mindar-image", `imageTargetSrc: ${TARGET_PATH}`);
 
-  /* ====== Local state (bottom bubble shows latest visitor) ====== */
+  /* ===== Local storage ===== */
   const ART_ID = "art1";
   const k = (n)=>`webar:${ART_ID}:${n}`;
   const load = (n, f)=>{ try{ return JSON.parse(localStorage.getItem(k(n))||JSON.stringify(f)); }catch{ return f; } };
   const save = (n, v)=> localStorage.setItem(k(n), JSON.stringify(v));
-  let latest = load("latestComment", null);
-  const bottomText = document.getElementById("bottomText");
-  if (latest) bottomText.textContent = latest;
 
-  /* ====== Show fixed bubbles once target seen ====== */
+  // Restore last visitor bubble if saved
+  const storedVisitor = load("visitorLatest", null);
+  if (storedVisitor){
+    document.getElementById('topTitle').textContent = storedVisitor.name || "Anonymous";
+    document.getElementById('topText').textContent  = storedVisitor.text || "";
+  }
+
+  /* ===== Show bubbles after first detection ===== */
   const bubbles = document.getElementById('bubbles');
   const fab = document.getElementById('fab');
   const hint = document.getElementById('hint');
@@ -173,9 +210,9 @@
     bubbles.style.display = 'block';
     fab.style.display = 'block';
   });
-  anchor.addEventListener('targetLost', ()=>{ /* keep bubbles shown */ });
+  anchor.addEventListener('targetLost', ()=>{ /* keep bubbles pinned */ });
 
-  /* ====== Likes & share ====== */
+  /* ===== Likes & share ===== */
   function toggleLike(btnId, storeKey){
     const el = document.getElementById(btnId);
     const liked = load(storeKey, false);
@@ -196,7 +233,7 @@
   document.getElementById('sTop').onclick = sharePage;
   document.getElementById('sBottom').onclick = sharePage;
 
-  /* ====== Composer ====== */
+  /* ===== Composer ===== */
   const composer = document.getElementById('composer');
   const compInput = document.getElementById('compInput');
   const sendBtn = document.getElementById('sendBtn');
@@ -205,24 +242,52 @@
   function openComposer(){ composer.classList.add('show'); compInput.focus(); }
   function closeComposer(){ composer.classList.remove('show'); }
   fab.onclick = openComposer;
-  document.getElementById('cTop').onclick = toggleThread;     // comment icon opens thread
-  document.getElementById('cBottom').onclick = toggleThread;  // comment icon opens thread
   closeComp.onclick = closeComposer;
   chipbar.onclick = (e)=>{ if(e.target.classList.contains('chip')) {
     const t = e.target.textContent.trim();
     compInput.value = compInput.value ? (compInput.value + ' ' + t) : t;
     compInput.focus();
   }};
-  function post(){
-    const t = (compInput.value||"").trim(); if(!t) return;
+
+  // Post now opens Share Options sheet
+  let pendingText = "";
+  sendBtn.onclick = ()=>{
+    const t = (compInput.value||"").trim();
+    if(!t) return;
+    pendingText = t;
+    document.getElementById('shareName').value = ""; // reset
+    openShareModal();
+  };
+
+  /* ===== Share Options (name / anonymous) ===== */
+  const shareModal = document.getElementById('shareModal');
+  const shareClose = document.getElementById('shareClose');
+  const btnAnon = document.getElementById('btnAnon');
+  const btnWithName = document.getElementById('btnWithName');
+  const shareName = document.getElementById('shareName');
+
+  function openShareModal(){ shareModal.classList.add('show'); }
+  function closeShareModal(){ shareModal.classList.remove('show'); }
+
+  shareClose.onclick = closeShareModal;
+
+  function finalizePost(nameOrNull){
+    // Update top (visitor) bubble + persist
+    document.getElementById('topTitle').textContent = nameOrNull || "Anonymous";
+    document.getElementById('topText').textContent  = pendingText;
+    save("visitorLatest", { name: nameOrNull || null, text: pendingText, ts: Date.now() });
+
+    // clear UI
     compInput.value = "";
-    latest = t; save("latestComment", t);
-    bottomText.textContent = t;
+    pendingText = "";
+    closeShareModal();
     closeComposer();
   }
-  sendBtn.onclick = post;
 
-  /* ====== Thread overlay (HARD-CODED COMMENTS + loop) ====== */
+  btnAnon.onclick = ()=> finalizePost(null);
+  btnWithName.onclick = ()=> finalizePost( (shareName.value||"").trim() || null );
+
+  /* ===== Thread overlay (hard-coded loop) ===== */
   const THREAD = [
     { user:"lucyjean333", age:"11h", text:"Love this!!", likes:5 },
     { user:"talk_tour",   age:"2d",  text:"Love your content!", likes:8 },
@@ -235,7 +300,7 @@
   const threadList = document.getElementById('threadList');
   const threadNext = document.getElementById('threadNext');
   const threadClose = document.getElementById('threadClose');
-  let tIndex = 0; // start index for the current page of 3
+  let tIndex = 0;
 
   function renderThread(){
     threadList.innerHTML = "";
@@ -249,7 +314,6 @@
         <div class="tLike" data-i="${(tIndex+i)%THREAD.length}">👍 ${item.likes}</div>`;
       threadList.appendChild(card);
     }
-    // like buttons (local only)
     threadList.querySelectorAll('.tLike').forEach(btn=>{
       btn.onclick = (e)=>{
         const i = Number(e.currentTarget.dataset.i);
@@ -260,15 +324,14 @@
   }
   function openThread(){ renderThread(); thread.style.display='block'; }
   function closeThread(){ thread.style.display='none'; }
-  function toggleThread(){
-    // If hidden → show first page; if visible → hide (as requested)
-    if (thread.style.display !== 'block'){ tIndex = 0; openThread(); }
-    else { closeThread(); }
-  }
+  function toggleThread(){ thread.style.display==='block' ? closeThread() : openThread(); }
+
+  document.getElementById('cTop').onclick = toggleThread;
+  document.getElementById('cBottom').onclick = toggleThread;
   threadNext.onclick = ()=>{ tIndex = (tIndex + 3) % THREAD.length; renderThread(); };
   threadClose.onclick = closeThread;
 
-  /* ===== Helpers ===== */
+  /* ===== Helper ===== */
   function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 </script>
 </body>
