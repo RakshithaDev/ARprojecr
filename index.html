@@ -1,13 +1,15 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>AR Artwork — Screen-Locked Bubbles</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>AR Artwork — 2 Fixed + 1 User Bubble</title>
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 <style>
   html,body{margin:0;height:100%;font-family:system-ui,-apple-system,Segoe UI,Roboto}
   .a-enter-vr,.a-enter-vr-button,.a-enter-ar,.a-enter-ar-button{display:none!important}
+
   /* hint + FAB */
   #hint{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.55);color:#fff;
         padding:6px 10px;border-radius:999px;z-index:6}
@@ -15,7 +17,8 @@
        background:radial-gradient(120% 120% at 30% 30%, #ffb2d9, #ffcf9a 55%, #b6c8ff);
        box-shadow:0 16px 40px rgba(255,160,200,.45), 0 6px 18px rgba(0,0,0,.35);
        border:1px solid rgba(255,255,255,.35); z-index:6; display:none}
-  /* DOM bubbles (fixed on screen) */
+
+  /* screen-locked bubbles */
   #bubbles{position:fixed;inset:0;pointer-events:none;z-index:5;display:none}
   .bubble{
     position:absolute; max-width:min(90vw,620px); color:#1a1a1a; pointer-events:auto;
@@ -37,10 +40,14 @@
         background:#00000010; border:1px solid #00000012; border-radius:999px; cursor:pointer; user-select:none}
   .icon.liked{background:#ff99c51f; border-color:#ff99c560}
   .icon span{font-size:14px}
+
   /* positions */
   #bubbleTop{top:10%; left:6%}
   #bubbleBottom{bottom:12%; left:50%; transform:translateX(-50%)}
-  /* Composer sheet */
+  /* new: user bubble (bottom-right-ish). Adjust if it overlaps on your device */
+  #bubbleUser{bottom:28%; right:6%; display:none}
+
+  /* composer (full-screen) */
   #composer{position:fixed;inset:0;display:none;z-index:10;
     background:linear-gradient(140deg,#ffd7bd 15%,#ffc6e0 85%);
     padding:calc(env(safe-area-inset-top) + 20px) 16px calc(env(safe-area-inset-bottom) + 24px)}
@@ -56,13 +63,30 @@
   .btn{padding:12px 16px;border-radius:14px;border:0;font-weight:700;cursor:pointer}
   .btn.primary{background:#2b232b;color:#fff}
   .btn.secondary{background:#ffffffcc;color:#2b232b}
+
+  /* share-choice modal */
+  #shareSheet{position:fixed;inset:0;display:none;z-index:11;background:rgba(0,0,0,.35);backdrop-filter:blur(2px)}
+  #shareSheet.show{display:flex;align-items:center;justify-content:center}
+  .sheetCard{
+    width:min(560px,92vw); border-radius:22px; background:rgba(255,255,255,.9);
+    box-shadow:0 30px 60px rgba(0,0,0,.25); padding:18px; color:#2b232b; position:relative
+  }
+  .sheetCard h2{margin:0 0 8px; font-size:20px}
+  .sheetCard p{margin:0 0 14px; opacity:.85}
+  .xbtn{position:absolute; right:12px; top:12px; width:34px; height:34px; border-radius:50%; border:1px solid #00000015; background:#ffffffaa}
+  .nameRow{display:flex;gap:8px;align-items:center;background:#ffffff;border:1px solid #00000012;border-radius:14px;padding:10px 12px}
+  .nameRow input{flex:1;border:0;outline:none;background:transparent;font-size:16px}
+  .sendMini{border:0;background:#2b232b;color:#fff;border-radius:10px;padding:8px 12px;font-weight:700}
+  .anonBtn{margin-top:14px;width:100%;border:0;border-radius:18px;padding:14px 16px;background:#d3947b;color:#2b232b;font-weight:800}
 </style>
 </head>
 <body>
 
 <div id="hint">Point your camera at the artwork</div>
+
+<!-- Screen-locked bubbles -->
 <div id="bubbles">
-  <!-- Top (artist) -->
+  <!-- 1) Artist -->
   <div id="bubbleTop" class="bubble">
     <h3>Zen – the artist</h3>
     <p>“This piece explores the interplay of displacement, everyday objects and nostalgic wonder.”</p>
@@ -72,17 +96,31 @@
       <div class="icon" title="Share" id="sTop"><span>↗︎</span></div>
     </div>
   </div>
-  <!-- Bottom (curator / latest visitor) -->
+
+  <!-- 2) Curator -->
   <div id="bubbleBottom" class="bubble">
     <h3>Curator’s Note</h3>
-    <p id="bottomText">“A quiet yet defiant work that turns ordinary retail bags into a field for memory, resilience and becoming.”</p>
+    <p>“A quiet yet defiant work that turns ordinary retail bags into a field for memory, resilience and becoming.”</p>
     <div class="icons">
       <div id="likeBottom" class="icon" title="Like"><span>❤️</span></div>
       <div class="icon" title="Comment" id="cBottom"><span>💬</span></div>
       <div class="icon" title="Share" id="sBottom"><span>↗︎</span></div>
     </div>
   </div>
+
+  <!-- 3) User (hidden until first post) -->
+  <div id="bubbleUser" class="bubble">
+    <h3 id="userTitle">Visitor</h3>
+    <p id="userText"></p>
+    <div class="icons">
+      <div id="likeUser" class="icon" title="Like"><span>❤️</span></div>
+      <div class="icon" title="Comment" id="cUser"><span>💬</span></div>
+      <div class="icon" title="Share" id="sUser"><span>↗︎</span></div>
+    </div>
+  </div>
 </div>
+
+<!-- FAB -->
 <div id="fab" aria-label="Share your thoughts"></div>
 
 <!-- Composer -->
@@ -90,8 +128,8 @@
   <div class="comp">
     <div class="title">What’s on your mind?</div>
     <div class="pill">
-      <input id="compInput" placeholder="Add your thought…" maxlength="300"/>
-      <button id="sendBtn" class="btn primary">Post</button>
+      <input id="compInput" placeholder="It brings me joy because…" maxlength="300"/>
+      <button id="postBtn" class="btn primary">Post</button>
     </div>
     <div class="chips" id="chipbar">
       <div class="chip">Happy</div><div class="chip">Grateful</div><div class="chip">Curious</div>
@@ -100,6 +138,20 @@
     <div class="actions">
       <button id="closeComp" class="btn secondary">Cancel</button>
     </div>
+  </div>
+</div>
+
+<!-- Share-choice modal -->
+<div id="shareSheet" role="dialog" aria-modal="true">
+  <div class="sheetCard">
+    <button id="sheetClose" class="xbtn">✕</button>
+    <h2>How would you like to share?</h2>
+    <p>You can add your name or share it anonymous.</p>
+    <div class="nameRow">
+      <input id="nameInput" placeholder="Add my name"/>
+      <button id="sendNamed" class="sendMini">Post ➤</button>
+    </div>
+    <button id="sendAnon" class="anonBtn">Anonymous</button>
   </div>
 </div>
 
@@ -116,49 +168,59 @@
 
 <script>
   /* ====== CONFIG ====== */
-  const TARGET_PATH = "./targets%20(7).mind"; // change if your .mind path differs
+  const TARGET_PATH = "./targets%20(7).mind";
   document.getElementById("scene").setAttribute("mindar-image", `imageTargetSrc: ${TARGET_PATH}`);
 
-  /* ====== Local state (2 bubbles max; bottom shows latest visitor) ====== */
+  /* ====== Local state (persist user bubble only) ====== */
   const ART_ID = "art1";
   const k = (n)=>`webar:${ART_ID}:${n}`;
   const load = (n, f)=>{ try{ return JSON.parse(localStorage.getItem(k(n))||JSON.stringify(f)); }catch{ return f; } };
   const save = (n, v)=> localStorage.setItem(k(n), JSON.stringify(v));
-  let latest = load("latestComment", null);
-  const bottomText = document.getElementById("bottomText");
-  if (latest) bottomText.textContent = latest;
 
-  /* ====== Make bubbles persistent on screen ====== */
-  const bubbles = document.getElementById('bubbles');
-  const fab = document.getElementById('fab');
-  const hint = document.getElementById('hint');
-  const anchor = document.getElementById('anchor');
-  let shown = false; // show once when first detected
+  let userData = load("userComment", null); // {text, name, ts}
 
+  const bubbles   = document.getElementById('bubbles');
+  const fab       = document.getElementById('fab');
+  const hint      = document.getElementById('hint');
+  const anchor    = document.getElementById('anchor');
+  const bubbleUser= document.getElementById('bubbleUser');
+  const userTitle = document.getElementById('userTitle');
+  const userText  = document.getElementById('userText');
+
+  // show saved user bubble on load
+  if (userData && userData.text){
+    userTitle.textContent = userData.name ? userData.name : "Anonymous";
+    userText.textContent  = userData.text;
+    bubbleUser.style.display = 'block';
+  } else {
+    bubbleUser.style.display = 'none';
+  }
+
+  /* ====== show overlay once on detection, keep it visible after ====== */
+  let shown = false;
   anchor.addEventListener('targetFound', ()=>{
     if (shown) return;
     shown = true;
-    hint.style.display = 'none';
-    bubbles.style.display = 'block';   // FIXED DOM overlay — won’t move with camera
-    fab.style.display = 'block';
+    hint.style.display='none';
+    bubbles.style.display='block';
+    fab.style.display='block';
   });
+  anchor.addEventListener('targetLost', ()=>{/* keep UI visible */});
 
-  // Do NOT hide bubbles on lost — keeps them on screen even when angle changes.
-  anchor.addEventListener('targetLost', ()=>{ /* intentionally no-op */ });
-
-  /* ====== Icons ====== */
+  /* ====== likes & share for all three ====== */
   function toggleLike(btnId, storeKey){
     const el = document.getElementById(btnId);
     const liked = load(storeKey, false);
-    if (liked) el.classList.add('liked'); else el.classList.remove('liked');
+    if (liked) el.classList.add('liked');
     el.addEventListener('click', ()=>{
       const now = !load(storeKey, false);
       save(storeKey, now);
-      if (now) el.classList.add('liked'); else el.classList.remove('liked');
+      el.classList.toggle('liked', now);
     });
   }
-  toggleLike('likeTop', 'likedTop');
-  toggleLike('likeBottom', 'likedBottom');
+  toggleLike('likeTop','likedTop');
+  toggleLike('likeBottom','likedBottom');
+  toggleLike('likeUser','likedUser');
 
   function sharePage(){ const url = location.href;
     if (navigator.share) navigator.share({title:'AR Artwork', url}).catch(()=>{});
@@ -166,33 +228,63 @@
   }
   document.getElementById('sTop').onclick = sharePage;
   document.getElementById('sBottom').onclick = sharePage;
+  document.getElementById('sUser').onclick = sharePage;
 
-  /* ====== Composer ====== */
-  const composer = document.getElementById('composer');
+  /* ====== composer flow ====== */
+  const composer  = document.getElementById('composer');
   const compInput = document.getElementById('compInput');
-  const sendBtn = document.getElementById('sendBtn');
+  const postBtn   = document.getElementById('postBtn');
   const closeComp = document.getElementById('closeComp');
-  const chipbar = document.getElementById('chipbar');
+  const chipbar   = document.getElementById('chipbar');
 
   function openComposer(){ composer.classList.add('show'); compInput.focus(); }
-  function closeComposer(){ composer.classList.remove('show'); }
+  function closeComposerFn(){ composer.classList.remove('show'); }
+
   fab.onclick = openComposer;
   document.getElementById('cTop').onclick = openComposer;
   document.getElementById('cBottom').onclick = openComposer;
-  closeComp.onclick = closeComposer;
+  document.getElementById('cUser').onclick = openComposer;
+  closeComp.onclick = closeComposerFn;
+
   chipbar.onclick = (e)=>{ if(e.target.classList.contains('chip')) {
-    const t = e.target.textContent.trim();
+    const t=e.target.textContent.trim();
     compInput.value = compInput.value ? (compInput.value + ' ' + t) : t;
     compInput.focus();
   }};
-  function post(){
-    const t = (compInput.value||"").trim(); if(!t) return;
-    compInput.value = "";
-    latest = t; save("latestComment", t);
-    bottomText.textContent = t; // update bottom bubble with newest visitor comment
-    closeComposer();
+
+  /* ====== share-choice modal ====== */
+  const sheet      = document.getElementById('shareSheet');
+  const sheetClose = document.getElementById('sheetClose');
+  const nameInput  = document.getElementById('nameInput');
+  const sendNamed  = document.getElementById('sendNamed');
+  const sendAnon   = document.getElementById('sendAnon');
+
+  function openSheet(){ sheet.classList.add('show'); nameInput.value=''; nameInput.focus(); }
+  function closeSheet(){ sheet.classList.remove('show'); }
+
+  postBtn.onclick = ()=>{
+    const t = (compInput.value||"").trim();
+    if(!t){ compInput.focus(); return; }
+    openSheet();
+  };
+  sheetClose.onclick = closeSheet;
+
+  function finishPost(name){
+    const text = (compInput.value||"").trim(); if(!text) return;
+    userData = { text, name: (name||"").trim() || null, ts: Date.now() };
+    save("userComment", userData);
+
+    // show/update the 3rd bubble (do not replace the curator/artist ones)
+    userTitle.textContent = userData.name ? userData.name : "Anonymous";
+    userText.textContent  = userData.text;
+    bubbleUser.style.display = 'block';
+
+    closeSheet();
+    closeComposerFn();
   }
-  sendBtn.onclick = post;
+  sendNamed.onclick = ()=> finishPost(nameInput.value);
+  nameInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); finishPost(nameInput.value); }});
+  sendAnon.onclick  = ()=> finishPost(null);
 </script>
 </body>
 </html>
