@@ -40,8 +40,8 @@
   .icon.liked{background:#ff99c51f; border-color:#ff99c560}
   .icon span{font-size:14px}
   /* positions */
-  #bubbleTop{top:10%; left:6%}              /* Visitor (name/anon) */
-  #bubbleBottom{bottom:12%; left:50%; transform:translateX(-50%)} /* Curator */
+  #bubbleTop{top:10%; left:6%}
+  #bubbleBottom{bottom:12%; left:50%; transform:translateX(-50%)}
 
   /* Composer sheet */
   #composer{position:fixed;inset:0;display:none;z-index:10;
@@ -54,7 +54,7 @@
         border-radius:18px;padding:10px 12px}
   .pill input{flex:1;border:0;outline:none;background:transparent;font-size:16px;color:#2b232b}
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin:12px auto 0;max-width:560px}
-  .chip{padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.08);border:1px solid rgba(0,0,0,.06);color:#503d49;cursor:pointer}
+  .chip{padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.08);border:1px solid #00000006;color:#503d49;cursor:pointer}
   .actions{margin-top:auto;display:flex;gap:10px;justify-content:center}
   .btn{padding:12px 16px;border-radius:14px;border:0;font-weight:700;cursor:pointer}
   .btn.primary{background:#2b232b;color:#fff}
@@ -67,12 +67,13 @@
     border-radius:28px;
     background:linear-gradient(180deg,#eaa38c 0%, #c17567 100%);
     color:#fff; padding:14px 18px; box-shadow:0 22px 50px rgba(0,0,0,.35);
-    border:1px solid #ffffff33; display:flex; align-items:center; gap:12px
+    border:1px solid #ffffff33; display:flex; align-items:center; gap:12px; flex-wrap:wrap
   }
   .tMeta{min-width:140px;font-weight:700}
   .tMeta small{display:block;opacity:.85;font-weight:600}
-  .tText{flex:1}
-  .tLike{margin-left:auto;background:#ffffff22;border:1px solid #ffffff44;border-radius:12px;padding:8px 10px;cursor:pointer}
+  .tText{flex:1;min-width:180px}
+  .tActions{display:flex;gap:10px;margin-left:auto}
+  .tBtnLite{background:#ffffff22;border:1px solid #ffffff44;border-radius:12px;padding:8px 10px;cursor:pointer}
   .tBar{display:flex;justify-content:flex-end;gap:10px;margin:6px auto 0;max-width:680px;padding:0 12px}
   .tBtn{background:#111a22;color:#fff;border:1px solid #2a3342;border-radius:12px;padding:8px 12px;cursor:pointer}
 
@@ -97,7 +98,7 @@
 
 <!-- Fixed bubbles -->
 <div id="bubbles">
-  <!-- Top = latest visitor (name/anon). Defaults to a placeholder until first post -->
+  <!-- Top = latest visitor (or deep-linked comment) -->
   <div id="bubbleTop" class="bubble">
     <h3 id="topTitle">Anonymous</h3>
     <p id="topText">“It brings me joy because it makes me think of time with my family.”</p>
@@ -170,7 +171,7 @@
 
 <!-- AR scene -->
 <a-scene id="scene"
-         mindar-image="imageTargetSrc: ./targets%20(9).mind"
+         mindar-image="imageTargetSrc: ./targets%20(10).mind"
          renderer="colorManagement:true, physicallyCorrectLights:false"
          vr-mode-ui="enabled:false"
          device-orientation-permission-ui="enabled:true"
@@ -180,39 +181,71 @@
 </a-scene>
 
 <script>
-  /* ===== CONFIG ===== */
-  const TARGET_PATH = "./targets%20(10).mind";
-  document.getElementById("scene").setAttribute("mindar-image", `imageTargetSrc: ${TARGET_PATH}`);
-
-  /* ===== Local storage ===== */
+  /* ===== CONFIG & storage helpers ===== */
   const ART_ID = "art1";
   const k = (n)=>`webar:${ART_ID}:${n}`;
   const load = (n, f)=>{ try{ return JSON.parse(localStorage.getItem(k(n))||JSON.stringify(f)); }catch{ return f; } };
   const save = (n, v)=> localStorage.setItem(k(n), JSON.stringify(v));
 
-  // Restore last visitor bubble if saved
-  const storedVisitor = load("visitorLatest", null);
-  if (storedVisitor){
-    document.getElementById('topTitle').textContent = storedVisitor.name || "Anonymous";
-    document.getElementById('topText').textContent  = storedVisitor.text || "";
+  /* ===== Seed 4 comments (persisted) ===== */
+  const THREAD = load("threadData", [
+    { user:"lucyjean333", age:"11h", text:"Love this!!", likes:5 },
+    { user:"talk_tour",   age:"2d",  text:"Love your content!", likes:8 },
+    { user:"gallery_go",  age:"3d",  text:"The composition is beautiful.", likes:2 },
+    { user:"art_student", age:"5d",  text:"This spoke to me today.", likes:4 }
+  ]);
+  function persistThread(){ save("threadData", THREAD); }
+
+  /* ===== Deep link: ?c=<base64 json> shows that comment immediately ===== */
+  function getFeaturedFromURL(){
+    const p = new URLSearchParams(location.search);
+    const c = p.get('c');
+    if (!c) return null;
+    try{ return JSON.parse(atob(decodeURIComponent(c))); }catch{ return null; }
+  }
+  function makePermalink(item){
+    const payload = { user: item.user||"Anonymous", text: item.text||"", ts: Date.now() };
+    const b64 = btoa(JSON.stringify(payload));
+    const url = new URL(location.href);
+    url.searchParams.set('c', encodeURIComponent(b64));
+    return url.toString();
   }
 
-  /* ===== Show bubbles after first detection ===== */
+  /* ===== UI refs ===== */
+  const hint = document.getElementById('hint');
   const bubbles = document.getElementById('bubbles');
   const fab = document.getElementById('fab');
-  const hint = document.getElementById('hint');
   const anchor = document.getElementById('anchor');
+  const topTitle = document.getElementById('topTitle');
+  const topText  = document.getElementById('topText');
+
+  /* ===== Show bubbles on AR target, OR immediately if deep-linked ===== */
   let shown = false;
-  anchor.addEventListener('targetFound', ()=>{
+  function showOverlaysNow(){
     if (shown) return;
     shown = true;
     hint.style.display = 'none';
     bubbles.style.display = 'block';
     fab.style.display = 'block';
-  });
-  anchor.addEventListener('targetLost', ()=>{ /* keep bubbles pinned */ });
+  }
+  anchor.addEventListener('targetFound', showOverlaysNow);
 
-  /* ===== Likes & share ===== */
+  // If URL points to a specific comment, show it right away (no scanning)
+  const featured = getFeaturedFromURL();
+  if (featured){
+    topTitle.textContent = featured.user || "Anonymous";
+    topText.textContent  = featured.text || "";
+    showOverlaysNow();
+  } else {
+    // otherwise restore last visitor bubble if saved
+    const storedVisitor = load("visitorLatest", null);
+    if (storedVisitor){
+      topTitle.textContent = storedVisitor.name || "Anonymous";
+      topText.textContent  = storedVisitor.text || "";
+    }
+  }
+
+  /* ===== Likes & share (top/bottom bubbles) ===== */
   function toggleLike(btnId, storeKey){
     const el = document.getElementById(btnId);
     const liked = load(storeKey, false);
@@ -226,7 +259,8 @@
   toggleLike('likeTop', 'likedTop');
   toggleLike('likeBottom', 'likedBottom');
 
-  function sharePage(){ const url = location.href;
+  function sharePage(){
+    const url = location.href;
     if (navigator.share) navigator.share({title:'AR Artwork', url}).catch(()=>{});
     else navigator.clipboard.writeText(url).then(()=>alert('Link copied'));
   }
@@ -239,6 +273,7 @@
   const sendBtn = document.getElementById('sendBtn');
   const closeComp = document.getElementById('closeComp');
   const chipbar = document.getElementById('chipbar');
+
   function openComposer(){ composer.classList.add('show'); compInput.focus(); }
   function closeComposer(){ composer.classList.remove('show'); }
   fab.onclick = openComposer;
@@ -249,13 +284,13 @@
     compInput.focus();
   }};
 
-  // Post now opens Share Options sheet
+  // Post opens Share Options
   let pendingText = "";
   sendBtn.onclick = ()=>{
     const t = (compInput.value||"").trim();
     if(!t) return;
     pendingText = t;
-    document.getElementById('shareName').value = ""; // reset
+    document.getElementById('shareName').value = "";
     openShareModal();
   };
 
@@ -268,34 +303,36 @@
 
   function openShareModal(){ shareModal.classList.add('show'); }
   function closeShareModal(){ shareModal.classList.remove('show'); }
-
   shareClose.onclick = closeShareModal;
 
   function finalizePost(nameOrNull){
-    // Update top (visitor) bubble + persist
-    document.getElementById('topTitle').textContent = nameOrNull || "Anonymous";
-    document.getElementById('topText').textContent  = pendingText;
+    // Update top bubble + persist
+    topTitle.textContent = nameOrNull || "Anonymous";
+    topText.textContent  = pendingText;
     save("visitorLatest", { name: nameOrNull || null, text: pendingText, ts: Date.now() });
 
-    // clear UI
+    // Push into thread (newest first)
+    const newItem = { user:(nameOrNull||"Anonymous"), age:"now", text: pendingText, likes:0 };
+    THREAD.unshift(newItem);
+    persistThread();
+    tIndex = 0;
+    if (thread.style.display === 'block') renderThread();
+
+    // Clear UI
     compInput.value = "";
     pendingText = "";
     closeShareModal();
     closeComposer();
+
+    // Optional: update URL so reload also shows this comment
+    const link = makePermalink(newItem);
+    history.replaceState(null, "", link);
   }
 
   btnAnon.onclick = ()=> finalizePost(null);
   btnWithName.onclick = ()=> finalizePost( (shareName.value||"").trim() || null );
 
-  /* ===== Thread overlay (hard-coded loop) ===== */
-  const THREAD = [
-    { user:"lucyjean333", age:"11h", text:"Love this!!", likes:5 },
-    { user:"talk_tour",   age:"2d",  text:"Love your content!", likes:8 },
-    { user:"gallery_go",  age:"3d",  text:"The composition is beautiful.", likes:2 },
-    { user:"art_student", age:"5d",  text:"This spoke to me today.", likes:4 },
-    { user:"familia",     age:"1w",  text:"Reminds me of home ❤️", likes:6 },
-    { user:"local_guide", age:"2w",  text:"Great curation and lighting.", likes:1 },
-  ];
+  /* ===== Thread overlay ===== */
   const thread = document.getElementById('thread');
   const threadList = document.getElementById('threadList');
   const threadNext = document.getElementById('threadNext');
@@ -304,35 +341,163 @@
 
   function renderThread(){
     threadList.innerHTML = "";
-    for (let i=0;i<3;i++){
-      const item = THREAD[(tIndex + i) % THREAD.length];
+    const N = Math.min(3, THREAD.length);
+    for (let i=0;i<N;i++){
+      const idx = (tIndex + i) % THREAD.length;
+      const item = THREAD[idx];
+
       const card = document.createElement('div');
       card.className = "tCard";
       card.innerHTML = `
-        <div class="tMeta">@${item.user}<small>${item.age}</small></div>
+        <div class="tMeta">@${escapeHtml(item.user)}<small>${escapeHtml(item.age)}</small></div>
         <div class="tText">${escapeHtml(item.text)}</div>
-        <div class="tLike" data-i="${(tIndex+i)%THREAD.length}">👍 ${item.likes}</div>`;
+        <div class="tActions">
+          <button class="tBtnLite tLike"  data-i="${idx}">👍 <span>${item.likes}</span></button>
+          <button class="tBtnLite tShare" data-i="${idx}">↗︎ Share</button>
+        </div>`;
       threadList.appendChild(card);
     }
+
+    // like
     threadList.querySelectorAll('.tLike').forEach(btn=>{
       btn.onclick = (e)=>{
         const i = Number(e.currentTarget.dataset.i);
         THREAD[i].likes++;
+        persistThread();
         renderThread();
       };
     });
+
+    // share (screenshot + deep-link)
+    threadList.querySelectorAll('.tShare').forEach(btn=>{
+      btn.onclick = async (e)=>{
+        const i = Number(e.currentTarget.dataset.i);
+        const item = THREAD[i];
+        const link = makePermalink(item);
+        await captureAndShare(item, link);
+      };
+    });
   }
+
   function openThread(){ renderThread(); thread.style.display='block'; }
   function closeThread(){ thread.style.display='none'; }
   function toggleThread(){ thread.style.display==='block' ? closeThread() : openThread(); }
 
   document.getElementById('cTop').onclick = toggleThread;
   document.getElementById('cBottom').onclick = toggleThread;
-  threadNext.onclick = ()=>{ tIndex = (tIndex + 3) % THREAD.length; renderThread(); };
+  threadNext.onclick = ()=>{ if (THREAD.length){ tIndex = (tIndex + 3) % THREAD.length; renderThread(); } };
   threadClose.onclick = closeThread;
 
-  /* ===== Helper ===== */
+  /* ===== Per-comment screenshot + share (includes permalink URL) ===== */
+  async function captureAndShare(item, urlForShare){
+    try{
+      const glCanvas = document.querySelector('canvas.a-canvas');
+      const baseW = glCanvas ? glCanvas.width : Math.min(1080, window.innerWidth*2);
+      const baseH = glCanvas ? glCanvas.height: Math.min(1920, window.innerHeight*2);
+
+      const out = document.createElement('canvas');
+      out.width = baseW; out.height = baseH;
+      const ctx = out.getContext('2d');
+
+      // draw AR scene or gradient
+      if (glCanvas){
+        ctx.drawImage(glCanvas, 0, 0, baseW, baseH);
+      } else {
+        const grad = ctx.createLinearGradient(0,0,0,baseH);
+        grad.addColorStop(0,'#ffe1c9'); grad.addColorStop(1,'#f7d3e9');
+        ctx.fillStyle = grad; ctx.fillRect(0,0,baseW,baseH);
+      }
+
+      // comment card
+      const margin = Math.round(baseW*0.05);
+      const boxW = baseW - margin*2;
+      const maxBoxH = Math.round(baseH*0.35);
+      const boxX = margin;
+      const boxY = baseH - maxBoxH - margin;
+
+      roundedRect(ctx, boxX, boxY, boxW, maxBoxH, Math.round(24*baseW/1080), 'rgba(0,0,0,0.55)');
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      roundedRect(ctx, boxX+6, boxY+6, boxW-12, maxBoxH-12, Math.round(22*baseW/1080), ctx.fillStyle);
+
+      const pad = Math.round(24*baseW/1080);
+      ctx.fillStyle = '#2b232b';
+      ctx.font = `${Math.round(36*baseW/1080)}px system-ui, -apple-system, Segoe UI, Roboto`;
+      ctx.textBaseline = 'top';
+
+      const title = '@' + (item.user || 'Anonymous');
+      ctx.fillText(title, boxX+pad, boxY+pad);
+
+      const textY = boxY + pad + Math.round(44*baseW/1080);
+      ctx.font = `${Math.round(34*baseW/1080)}px system-ui, -apple-system, Segoe UI, Roboto`;
+      drawWrappedText(ctx, '“' + (item.text||'') + '”', boxX+pad, textY, boxW - pad*2, Math.round(44*baseW/1080));
+
+      // export
+      out.toBlob(async (blob)=>{
+        const file = new File([blob], 'ar-comment.png', {type:'image/png'});
+        if (navigator.canShare && navigator.canShare({files:[file]})){
+          try { await navigator.share({ files:[file], title:'AR Comment', text:item.text, url:urlForShare }); }
+          catch(e){}
+        } else if (navigator.share){
+          // share URL/text only
+          try { await navigator.share({ title:'AR Comment', text:item.text, url:urlForShare }); }
+          catch(e){}
+          // also auto-download the image
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'ar-comment.png';
+          document.body.appendChild(a); a.click(); a.remove();
+        } else {
+          // fallback: copy link + download image
+          try { await navigator.clipboard.writeText(urlForShare); alert('Link copied. Image will download.'); } catch(_){}
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'ar-comment.png';
+          document.body.appendChild(a); a.click(); a.remove();
+        }
+      }, 'image/png', 0.92);
+    }catch(err){
+      console.error(err);
+      alert('Sorry, could not capture a screenshot on this device.');
+    }
+  }
+
+  /* ===== Thread toggles via bubbles ===== */
+  // (hooked above)
+
+  /* ===== Share modal helpers ===== */
+  function openShareModal(){ shareModal.classList.add('show'); }
+  function closeShareModal(){ shareModal.classList.remove('show'); }
+
+  /* ===== Small drawing helpers ===== */
+  function roundedRect(ctx, x, y, w, h, r, fill){
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.arcTo(x+w, y, x+w, y+h, r);
+    ctx.arcTo(x+w, y+h, x, y+h, r);
+    ctx.arcTo(x, y+h, x, y, r);
+    ctx.arcTo(x, y, x+w, y, r);
+    ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  }
+  function drawWrappedText(ctx, text, x, y, maxW, lineH){
+    const words = (text||'').split(/\s+/);
+    let line = '', yy = y;
+    for (let w of words){
+      const test = line ? (line + ' ' + w) : w;
+      const m = ctx.measureText(test).width;
+      if (m > maxW && line){
+        ctx.fillText(line, x, yy);
+        line = w; yy += lineH;
+      } else line = test;
+    }
+    if (line) ctx.fillText(line, x, yy);
+  }
   function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+  /* ===== Thread open buttons ===== */
+  document.getElementById('cTop').onclick = toggleThread;
+  document.getElementById('cBottom').onclick = toggleThread;
+
 </script>
 </body>
 </html>
