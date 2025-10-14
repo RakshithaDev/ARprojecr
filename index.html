@@ -314,7 +314,11 @@ const suggList = document.getElementById('suggList');
 const closeComp = document.getElementById('closeComp');
 const chipbar = document.getElementById('chipbar');
 
-function openComposer(){ composer.classList.add('show'); compInput.focus(); }
+function openComposer(){
+  composer.classList.add('show'); compInput.focus();
+  // push a lightweight state; Back will close it
+  try { history.pushState({modal:'composer'}, ''); } catch(_) {}
+}
 function closeComposer(){ composer.classList.remove('show'); }
 fab.onclick = openComposer;
 closeComp.onclick = closeComposer;
@@ -406,6 +410,8 @@ function openShareModal(){
   shareModal.classList.add('show');
   shareModal.setAttribute('aria-hidden','false');
   setTimeout(()=>shareName.focus(), 0);
+  // push a state; Back will close it
+  try { history.pushState({modal:'share'}, ''); } catch(_) {}
 }
 function closeShareModal(){
   shareModal.classList.remove('show');
@@ -415,7 +421,6 @@ function closeShareModal(){
 shareClose.onclick = (e)=>{ e.stopPropagation(); closeShareModal(); };
 
 function finalizePost(nameOrNull){
-  // If user tapped "Post with Name" but name is empty, fall back to Anonymous
   const finalName = (nameOrNull && nameOrNull.trim()) ? nameOrNull.trim() : "Anonymous";
   const newItem = { id:uid(), user:finalName, age:"now", text: pendingText, likes:0 };
   THREAD.unshift(newItem);
@@ -423,7 +428,7 @@ function finalizePost(nameOrNull){
   compInput.value = ""; pendingText = "";
   closeShareModal(); closeComposer();
   renderBubbles();
-  openThreadAt(0);
+  // No auto-open of thread here
 }
 btnAnon.onclick = (e)=>{ e.stopPropagation(); finalizePost(null); };
 btnWithName.onclick = (e)=>{ e.stopPropagation(); finalizePost(shareName.value); };
@@ -535,6 +540,22 @@ async function captureAndShare(item, urlForShare){
     alert('Sorry, could not capture a screenshot on this device.');
   }
 }
+
+/* ========= Overlay management ========= */
+function closeAllOverlays(){
+  try { closeShareModal(); } catch(_) {}
+  try { closeComposer(); } catch(_) {}
+  try { closeThread(); } catch(_) {}
+  // collapse AI suggestions
+  try {
+    aiOpen = false;
+    if (aiBlock) aiBlock.style.display = 'none';
+    if (aiBtn) { aiBtn.setAttribute('aria-expanded','false'); aiBtn.textContent = '✨ AI'; }
+  } catch(_) {}
+}
+
+// When user hits the browser Back button, close overlays (don’t reopen thread)
+window.addEventListener('popstate', closeAllOverlays);
 
 /* ========= Modal hard-hide on load ========= */
 function hideShareModalOnLoad(){
