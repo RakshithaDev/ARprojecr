@@ -58,10 +58,22 @@
   .pill input{flex:1;border:0;outline:none;background:transparent;font-size:16px;color:#2b232b}
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin:12px auto 0;max-width:560px}
   .chip{padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.08);border:1px solid #00000006;color:#503d49;cursor:pointer}
-  .actions{margin-top:auto;display:flex;gap:10px;justify-content:center}
+
+  /* AI suggestions block */
+  #aiBlock{display:none;margin:10px auto 0;max-width:560px}
+  .aiHead{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .aiBadge{font-size:12px;font-weight:700;padding:4px 8px;border-radius:999px;background:#111a22;color:#fff;border:1px solid #2a3342}
+  #suggList{display:flex;gap:8px;flex-wrap:wrap}
+  .sugg{padding:8px 10px;border-radius:12px;border:1px solid #00000012;background:#fff;cursor:pointer}
+  .sugg:hover{box-shadow:0 2px 8px rgba(0,0,0,.12)}
+  .btnRow{display:flex;gap:8px;margin-left:8px}
   .btn{padding:12px 16px;border-radius:14px;border:0;font-weight:700;cursor:pointer}
   .btn.primary{background:#2b232b;color:#fff}
   .btn.secondary{background:#ffffffcc;color:#2b232b}
+  .btn.ghost{background:#fff;border:1px solid #00000022}
+
+  .actions{margin-top:auto;display:flex;gap:10px;justify-content:center}
+  .btns-inline{display:flex;gap:8px;align-items:center;margin-left:8px}
 
   /* Thread overlay */
   #thread{position:fixed;left:0;right:0;bottom:96px;z-index:8;display:none;pointer-events:auto}
@@ -79,20 +91,6 @@
   .tBtnLite{background:#ffffff22;border:1px solid #ffffff44;border-radius:12px;padding:8px 10px;cursor:pointer}
   .tBar{display:flex;justify-content:flex-end;gap:10px;margin:6px auto 0;max-width:680px;padding:0 12px}
   .tBtn{background:#111a22;color:#fff;border:1px solid #2a3342;border-radius:12px;padding:8px 12px;cursor:pointer}
-
-  /* Share Options modal (name / anonymous) */
-  #shareModal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:12;align-items:center;justify-content:center}
-  #shareModal.show{display:flex}
-  .sheet{width:min(92vw,560px);border-radius:22px;overflow:hidden;background:rgba(255,255,255,.92);
-         box-shadow:0 30px 70px rgba(0,0,0,.45);backdrop-filter:blur(10px);border:1px solid #ffffffaa}
-  .sheetHead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(180deg,#ffe1c9,#f7d3e9)}
-  .sheetBody{padding:16px}
-  .xBtn{border:0;background:#00000010;border:1px solid #00000012;border-radius:999px;width:28px;height:28px;cursor:pointer}
-  .nameInput{width:100%;padding:12px 14px;border-radius:14px;border:1px solid #ddd;background:#fff;font-size:16px;margin:8px 0 4px}
-  .sheetActions{display:flex;gap:10px;justify-content:center;margin-top:10px}
-  .sBtn{padding:12px 16px;border-radius:14px;border:0;font-weight:700;cursor:pointer}
-  .sPrimary{background:#2b232b;color:#fff}
-  .sGhost{background:#ffffffcc;color:#2b232b;border:1px solid #00000022}
 </style>
 </head>
 <body>
@@ -144,12 +142,29 @@
     <div class="title">What’s on your mind?</div>
     <div class="pill">
       <input id="compInput" placeholder="Add your thought…" maxlength="300"/>
-      <button id="sendBtn" class="btn primary">Post</button>
+      <div class="btns-inline">
+        <button id="aiBtn" class="btn ghost" title="AI suggestions">✨ AI</button>
+        <button id="sendBtn" class="btn primary">Post</button>
+      </div>
     </div>
+
     <div class="chips" id="chipbar">
       <div class="chip">Happy</div><div class="chip">Grateful</div><div class="chip">Curious</div>
       <div class="chip">Calm</div><div class="chip">Excited</div><div class="chip">Inspired</div>
     </div>
+
+    <!-- AI suggestions (local, no API) -->
+    <div id="aiBlock">
+      <div class="aiHead">
+        <span class="aiBadge">AI</span>
+        <span style="opacity:.75">Suggestions (tap to use)</span>
+        <div class="btnRow">
+          <button id="aiRefresh" class="btn ghost" style="padding:6px 10px;">↻</button>
+        </div>
+      </div>
+      <div id="suggList"></div>
+    </div>
+
     <div class="actions">
       <button id="closeComp" class="btn secondary">Cancel</button>
     </div>
@@ -206,7 +221,6 @@ function seedIfNeeded(){
     THREAD = seed;
     persistThread();
   } else {
-    // ensure items have ids
     THREAD.forEach(it=>{ if(!it.id) it.id = uid(); });
     persistThread();
   }
@@ -256,7 +270,6 @@ if (DEBUG){ showOverlaysNow(); }
 /* ========= Render 4 bubbles from latest 4 comments ========= */
 function renderBubbles(){
   const latest4 = THREAD.slice(0,4);
-  // If less than 4, pad with placeholders (unlikely after seed)
   while(latest4.length < 4) latest4.push({id:uid(), user:"Anonymous", age:"", text:"", likes:0});
   latest4.forEach((item, idx)=>{
     const el = bEls[idx];
@@ -269,7 +282,6 @@ function renderBubbles(){
     likeBtn.onclick = ()=>{
       const i = THREAD.findIndex(x=>x.id===item.id);
       if (i>=0){ THREAD[i].likes++; persistThread(); }
-
       likeBtn.classList.add('liked');
       setTimeout(()=>likeBtn.classList.remove('liked'), 300);
     };
@@ -297,6 +309,10 @@ renderBubbles();
 const composer = document.getElementById('composer');
 const compInput = document.getElementById('compInput');
 const sendBtn = document.getElementById('sendBtn');
+const aiBtn = document.getElementById('aiBtn');
+const aiRefresh = document.getElementById('aiRefresh');
+const aiBlock = document.getElementById('aiBlock');
+const suggList = document.getElementById('suggList');
 const closeComp = document.getElementById('closeComp');
 const chipbar = document.getElementById('chipbar');
 
@@ -309,6 +325,57 @@ chipbar.onclick = (e)=>{ if(e.target.classList.contains('chip')) {
   compInput.value = compInput.value ? (compInput.value + ' ' + t) : t;
   compInput.focus();
 }};
+
+// --- AI-style suggestions (local only, no API) ---
+aiBtn.addEventListener('click', ()=>{ showAISuggestions(); });
+aiRefresh.addEventListener('click', ()=>{ showAISuggestions(true); });
+compInput.addEventListener('input', ()=>{ if(aiBlock.style.display==='block'){ showAISuggestions(); } });
+
+function showAISuggestions(forceShuffle=false){
+  aiBlock.style.display = 'block';
+  const base = (compInput.value||"").trim();
+  const mood = detectMood(base.toLowerCase());
+  const ideas = pickIdeas(mood, base, forceShuffle);
+  suggList.innerHTML = "";
+  ideas.forEach(s=>{
+    const b = document.createElement('button');
+    b.className = 'sugg';
+    b.textContent = s;
+    b.onclick = ()=>{ compInput.value = s; compInput.focus(); };
+    suggList.appendChild(b);
+  });
+}
+
+function detectMood(t){
+  if (/grateful|thanks|thankful|gratitude/.test(t)) return "grateful";
+  if (/curious|wonder|how|why/.test(t)) return "curious";
+  if (/calm|peace|soothing|quiet/.test(t)) return "calm";
+  if (/excited|wow|amazing|love|stunning|incredible/.test(t)) return "excited";
+  if (/inspire|motivated|prompt/.test(t)) return "inspired";
+  if (/happy|joy|smile/.test(t)) return "happy";
+  return "neutral";
+}
+
+function pickIdeas(mood, base, shuffle){
+  const pools = {
+    happy:   ["This made my day.","Bright, joyful energy.","Leaves me smiling."],
+    grateful:["Grateful for this piece.","Thanks for sharing this work.","A gentle, generous gesture."],
+    curious: ["How was this assembled?","I’m curious about the process.","Tell me more about the materials."],
+    calm:    ["Soothing and grounded.","Quiet, yet powerful.","I feel at peace here."],
+    excited: ["I can’t stop looking!","Electric energy in every detail.","I’m buzzing after seeing this."],
+    inspired:["This inspires me to create.","Taking this as a prompt.","Motivated to try something new."],
+    neutral: ["This really resonates with me.","It brings back memories.","I connected with this instantly."]
+  };
+  let list = pools[mood].slice();
+  if (base){
+    const seed = base[0].toUpperCase()+base.slice(1).replace(/\.$/,'');
+    list = list.map(s => `${seed}. ${s}`);
+  }
+  if (shuffle) list.sort(()=>Math.random()-0.5);
+  // top 3, padded from neutral if needed
+  while (list.length<3) list.push(...pools.neutral);
+  return list.slice(0,3);
+}
 
 // Post opens Share Options
 let pendingText = "";
