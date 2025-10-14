@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>AR Artwork — 4 Bubbles + Draggable + AI Suggestions</title>
+<title>AR Artwork — 4 Bubbles + Per-Comment Loop + Share</title>
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 <style>
@@ -15,7 +15,7 @@
   #fab{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);width:68px;height:68px;border-radius:50%;
        background:radial-gradient(120% 120% at 30% 30%, #ffb2d9, #ffcf9a 55%, #b6c8ff);
        box-shadow:0 16px 40px rgba(255,160,200,.45), 0 6px 18px rgba(0,0,0,.35);
-       border:1px solid rgba(255,255,255,.35); z-index:7; display:none; cursor:pointer}
+       border:1px solid rgba(255,255,255,.35); z-index:7; display:none}
 
   /* Bubbles layer */
   #bubbles{position:fixed;inset:0;pointer-events:none;z-index:6;display:none}
@@ -23,8 +23,7 @@
     position:absolute; max-width:min(44vw,560px); color:#1a1a1a; pointer-events:auto;
     padding:14px 16px 38px; border-radius:22px; backdrop-filter:blur(10px);
     background:linear-gradient(180deg,#fff7f0 0%, #ffe9f6 100%); box-shadow:0 20px 50px rgba(0,0,0,.28);
-    border:1px solid rgba(255,255,255,.6); touch-action:none; /* for draggable */
-    user-select:none;
+    border:1px solid rgba(255,255,255,.6)
   }
   .bubble:after{
     content:""; position:absolute; left:50%; transform:translateX(-50%); bottom:-16px;
@@ -35,14 +34,11 @@
   }
   .bubble h3{margin:0 0 6px; font-size:16px; font-weight:800; color:#2b232b}
   .bubble p{margin:0; line-height:1.25; color:#2b2b2b}
-  .icons{position:absolute; left:14px; bottom:8px; display:flex; gap:14px; opacity:.95}
-  .icon{width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center;
-        background:#00000010; border:1px solid #00000012; border-radius:999px; cursor:pointer; user-select:none; transition:.15s}
+  .icons{position:absolute; left:14px; bottom:8px; display:flex; gap:14px; opacity:.9}
+  .icon{width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center;
+        background:#00000010; border:1px solid #00000012; border-radius:999px; cursor:pointer; user-select:none}
+  .icon.liked{background:#ff99c51f; border-color:#ff99c560}
   .icon span{font-size:14px}
-  /* Like turns red */
-  .icon.like.liked{background:#ff2b5f; border-color:#ff2b5f; color:#fff}
-  .icon.like.liked span{filter:brightness(4)}
-  .icon:active{transform:scale(0.97)}
 
   /* 4 positions */
   #b1{top:10%; left:6%}
@@ -57,41 +53,46 @@
   #composer.show{display:block}
   .comp{max-width:560px;margin:0 auto;height:100%;display:flex;flex-direction:column}
   .title{font-weight:800;font-size:22px;text-align:center;color:#2b232b;margin-bottom:12px}
-  .pill{display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.9);border:1px solid rgba(0,0,0,.08);
+  .pill{display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.86);border:1px solid rgba(0,0,0,.08);
         border-radius:18px;padding:10px 12px}
   .pill input{flex:1;border:0;outline:none;background:transparent;font-size:16px;color:#2b232b}
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin:12px auto 0;max-width:560px}
-  .chip{padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.08);border:1px solid rgba(0,0,0,.06);color:#503d49;cursor:pointer}
-
-  /* AI suggestions row */
-  #aiRow{margin:12px auto 0;max-width:560px;display:flex;gap:8px;flex-wrap:wrap}
-  .sugg{padding:8px 10px;border-radius:12px;border:1px solid #00000012;background:#fff;cursor:pointer}
-  #regen{padding:8px 10px;border-radius:12px;border:1px solid #00000022;background:#111a22;color:#fff;cursor:pointer}
-
+  .chip{padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.08);border:1px solid #00000006;color:#503d49;cursor:pointer}
   .actions{margin-top:auto;display:flex;gap:10px;justify-content:center}
   .btn{padding:12px 16px;border-radius:14px;border:0;font-weight:700;cursor:pointer}
   .btn.primary{background:#2b232b;color:#fff}
   .btn.secondary{background:#ffffffcc;color:#2b232b}
 
-  /* Thread overlay (draggable cards) */
+  /* Thread overlay */
   #thread{position:fixed;left:0;right:0;bottom:96px;z-index:8;display:none;pointer-events:auto}
   .threadWrap{max-width:680px;margin:0 auto;padding:0 12px;display:flex;flex-direction:column;gap:12px}
   .tCard{
-    position:relative;
     border-radius:28px;
     background:linear-gradient(180deg,#eaa38c 0%, #c17567 100%);
     color:#fff; padding:14px 18px; box-shadow:0 22px 50px rgba(0,0,0,.35);
-    border:1px solid #ffffff33; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
-    touch-action:none; user-select:none; /* for drag */
+    border:1px solid #ffffff33; display:flex; align-items:center; gap:12px; flex-wrap:wrap
   }
   .tMeta{min-width:140px;font-weight:700}
   .tMeta small{display:block;opacity:.85;font-weight:600}
   .tText{flex:1;min-width:180px}
   .tActions{display:flex;gap:10px;margin-left:auto}
   .tBtnLite{background:#ffffff22;border:1px solid #ffffff44;border-radius:12px;padding:8px 10px;cursor:pointer}
-  .tBtnLite.hot{background:#ff2b5f;border-color:#ff2b5f;color:#fff}
   .tBar{display:flex;justify-content:flex-end;gap:10px;margin:6px auto 0;max-width:680px;padding:0 12px}
   .tBtn{background:#111a22;color:#fff;border:1px solid #2a3342;border-radius:12px;padding:8px 12px;cursor:pointer}
+
+  /* Share Options modal (name / anonymous) */
+  #shareModal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;z-index:12;align-items:center;justify-content:center}
+  #shareModal.show{display:flex}
+  .sheet{width:min(92vw,560px);border-radius:22px;overflow:hidden;background:rgba(255,255,255,.92);
+         box-shadow:0 30px 70px rgba(0,0,0,.45);backdrop-filter:blur(10px);border:1px solid #ffffffaa}
+  .sheetHead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(180deg,#ffe1c9,#f7d3e9)}
+  .sheetBody{padding:16px}
+  .xBtn{border:0;background:#00000010;border:1px solid #00000012;border-radius:999px;width:28px;height:28px;cursor:pointer}
+  .nameInput{width:100%;padding:12px 14px;border-radius:14px;border:1px solid #ddd;background:#fff;font-size:16px;margin:8px 0 4px}
+  .sheetActions{display:flex;gap:10px;justify-content:center;margin-top:10px}
+  .sBtn{padding:12px 16px;border-radius:14px;border:0;font-weight:700;cursor:pointer}
+  .sPrimary{background:#2b232b;color:#fff}
+  .sGhost{background:#ffffffcc;color:#2b232b;border:1px solid #00000022}
 </style>
 </head>
 <body>
@@ -126,7 +127,7 @@
 </div>
 
 <!-- FAB to open composer -->
-<div id="fab" aria-label="Share your thoughts" title="Add a comment"></div>
+<div id="fab" aria-label="Share your thoughts"></div>
 
 <!-- Thread overlay -->
 <div id="thread">
@@ -148,11 +149,6 @@
     <div class="chips" id="chipbar">
       <div class="chip">Happy</div><div class="chip">Grateful</div><div class="chip">Curious</div>
       <div class="chip">Calm</div><div class="chip">Excited</div><div class="chip">Inspired</div>
-    </div>
-    <!-- AI suggestions -->
-    <div id="aiRow">
-      <button id="regen">✨ Suggest</button>
-      <span id="suggs"></span>
     </div>
     <div class="actions">
       <button id="closeComp" class="btn secondary">Cancel</button>
@@ -197,9 +193,8 @@ const load = (n, f)=>{ try{ return JSON.parse(localStorage.getItem(k(n))||JSON.s
 const save = (n, v)=> localStorage.setItem(k(n), JSON.stringify(v));
 const DEBUG = /[?&]debug=1/.test(location.search);
 
-/* ========= Data model ========= */
+/* ========= Data model (Thread) ========= */
 let THREAD = load("threadData", []);
-let LIKESET = new Set(load("likes", [])); // store liked ids
 function seedIfNeeded(){
   if (!Array.isArray(THREAD) || THREAD.length === 0){
     const seed = [
@@ -211,16 +206,21 @@ function seedIfNeeded(){
     THREAD = seed;
     persistThread();
   } else {
+    // ensure items have ids
     THREAD.forEach(it=>{ if(!it.id) it.id = uid(); });
     persistThread();
   }
 }
 function persistThread(){ save("threadData", THREAD); }
-function saveLikes(){ save("likes", Array.from(LIKESET)); }
 function uid(){ return Math.random().toString(36).slice(2)+Date.now().toString(36); }
 seedIfNeeded();
 
-/* ========= Deep link helper ========= */
+/* ========= Deep link: ?c=<base64 json> ========= */
+function getFeaturedFromURL(){
+  const p = new URLSearchParams(location.search);
+  const c = p.get('c'); if (!c) return null;
+  try{ return JSON.parse(atob(decodeURIComponent(c))); }catch{ return null; }
+}
 function makePermalink(item){
   const payload = { id:item.id, user:item.user||"Anonymous", text:item.text||"", ts:Date.now() };
   const b64 = btoa(JSON.stringify(payload));
@@ -253,9 +253,10 @@ function showOverlaysNow(){
 anchor.addEventListener('targetFound', showOverlaysNow);
 if (DEBUG){ showOverlaysNow(); }
 
-/* ========= Render 4 bubbles ========= */
+/* ========= Render 4 bubbles from latest 4 comments ========= */
 function renderBubbles(){
   const latest4 = THREAD.slice(0,4);
+  // If less than 4, pad with placeholders (unlikely after seed)
   while(latest4.length < 4) latest4.push({id:uid(), user:"Anonymous", age:"", text:"", likes:0});
   latest4.forEach((item, idx)=>{
     const el = bEls[idx];
@@ -263,28 +264,24 @@ function renderBubbles(){
     el.querySelector('p').textContent  = '“' + (item.text||'') + '”';
     el.dataset.itemId = item.id;
 
-    // Like (toggle and red)
+    // Like
     const likeBtn = el.querySelector('.like');
-    likeBtn.classList.toggle('liked', LIKESET.has(item.id));
     likeBtn.onclick = ()=>{
       const i = THREAD.findIndex(x=>x.id===item.id);
-      const liked = LIKESET.has(item.id);
-      if (i>=0){
-        if (liked){ THREAD[i].likes = Math.max(0, (THREAD[i].likes||0)-1); LIKESET.delete(item.id); }
-        else { THREAD[i].likes = (THREAD[i].likes||0)+1; LIKESET.add(item.id); }
-        persistThread(); saveLikes();
-      }
-      likeBtn.classList.toggle('liked');
+      if (i>=0){ THREAD[i].likes++; persistThread(); }
+
+      likeBtn.classList.add('liked');
+      setTimeout(()=>likeBtn.classList.remove('liked'), 300);
     };
 
-    // Comments open loop at this comment
+    // Comment: open loop starting at this comment
     const cmtsBtn = el.querySelector('.cmts');
     cmtsBtn.onclick = ()=>{
       const i = THREAD.findIndex(x=>x.id===item.id);
       openThreadAt(i>=0 ? i : 0);
     };
 
-    // Share screenshot with this comment
+    // Share (screenshot + deep link)
     const shareBtn = el.querySelector('.share');
     shareBtn.onclick = ()=>{
       const i = THREAD.findIndex(x=>x.id===item.id);
@@ -292,149 +289,26 @@ function renderBubbles(){
       const link = makePermalink(real);
       captureAndShare(real, link);
     };
-
-    // Make bubble draggable
-    makeDraggable(el);
   });
 }
 renderBubbles();
 
-/* ========= Draggable helpers ========= */
-function makeDraggable(el){
-  let sx=0, sy=0, ox=0, oy=0, dragging=false;
-  const rect = ()=> el.getBoundingClientRect();
-
-  const onDown = (ev)=>{
-    dragging=true;
-    const p = ev.touches ? ev.touches[0] : ev;
-    const r = rect();
-    sx = p.clientX; sy = p.clientY;
-    ox = r.left; oy = r.top;
-    ev.preventDefault();
-  };
-  const onMove = (ev)=>{
-    if (!dragging) return;
-    const p = ev.touches ? ev.touches[0] : ev;
-    const dx = p.clientX - sx;
-    const dy = p.clientY - sy;
-    const left = Math.max(8, Math.min(window.innerWidth - rW(), ox + dx));
-    const top  = Math.max(8, Math.min(window.innerHeight - rH(), oy + dy));
-    el.style.left = left + "px";
-    el.style.top  = top  + "px";
-    el.style.right = "auto"; el.style.bottom = "auto";
-  };
-  const onUp = ()=> dragging=false;
-  const rW = ()=> rect().width;
-  const rH = ()=> rect().height;
-
-  el.addEventListener('pointerdown', onDown);
-  window.addEventListener('pointermove', onMove);
-  window.addEventListener('pointerup', onUp);
-
-  // for touch (Safari)
-  el.addEventListener('touchstart', onDown, {passive:false});
-  window.addEventListener('touchmove', onMove, {passive:false});
-  window.addEventListener('touchend', onUp);
-}
-
-/* ========= Composer + AI suggestions ========= */
+/* ========= Composer ========= */
 const composer = document.getElementById('composer');
 const compInput = document.getElementById('compInput');
 const sendBtn = document.getElementById('sendBtn');
 const closeComp = document.getElementById('closeComp');
 const chipbar = document.getElementById('chipbar');
-const regen = document.getElementById('regen');
-const suggsWrap = document.getElementById('suggs');
 
-function openComposer(){ composer.classList.add('show'); compInput.focus(); updateAISuggestions(); }
+function openComposer(){ composer.classList.add('show'); compInput.focus(); }
 function closeComposer(){ composer.classList.remove('show'); }
 fab.onclick = openComposer;
 closeComp.onclick = closeComposer;
 chipbar.onclick = (e)=>{ if(e.target.classList.contains('chip')) {
   const t = e.target.textContent.trim();
   compInput.value = compInput.value ? (compInput.value + ' ' + t) : t;
-  compInput.focus(); updateAISuggestions();
+  compInput.focus();
 }};
-
-compInput.addEventListener('input', updateAISuggestions);
-regen.addEventListener('click', ()=> updateAISuggestions(true));
-
-function updateAISuggestions(forceRefresh=false){
-  // simple on-device “AI”: matches mood/keywords and proposes 3 concise completions
-  const t = (compInput.value||"").toLowerCase().trim();
-  const mood = detectMood(t);
-  const base = t ? capitalize(t) : "";
-
-  const pools = {
-    happy: [
-      "This made my day!",
-      "Such a bright, joyful piece.",
-      "Smiles guaranteed every time."
-    ],
-    grateful: [
-      "Grateful for the story behind this.",
-      "Thank you for sharing this work.",
-      "Feels like a warm hug."
-    ],
-    curious: [
-      "I’m curious about the materials used.",
-      "How was this composed?",
-      "I want to learn more about the process."
-    ],
-    calm: [
-      "Soothing and grounding.",
-      "I feel at peace looking at this.",
-      "Quiet, but powerful."
-    ],
-    excited: [
-      "I can’t stop looking at it!",
-      "Electrifying energy.",
-      "I’m buzzing after seeing this."
-    ],
-    inspired: [
-      "This inspires me to create.",
-      "I’m taking this as a prompt.",
-      "Motivated to try something new."
-    ],
-    neutral: [
-      "This really resonates with me.",
-      "It brings back memories.",
-      "I connected with this instantly."
-    ]
-  };
-
-  let cands = pools[mood].slice(0);
-  // blend user text seed
-  if (base) cands = cands.map(s => base + (base.endsWith('.') ? ' ' : '. ') + s);
-
-  // shuffle a bit
-  if (forceRefresh) cands.sort(()=>Math.random()-0.5);
-
-  // ensure 3
-  const more = pools.neutral.filter(x=>!cands.includes(x));
-  while (cands.length<3 && more.length) cands.push(more.shift());
-
-  // render
-  suggsWrap.innerHTML = "";
-  cands.slice(0,3).forEach(s=>{
-    const b = document.createElement('button');
-    b.className = 'sugg';
-    b.textContent = s;
-    b.onclick = ()=>{ compInput.value = s; compInput.focus(); };
-    suggsWrap.appendChild(b);
-  });
-}
-
-function detectMood(t){
-  if (/grateful|thanks|thankful|gratitude/.test(t)) return "grateful";
-  if (/curious|wonder|how|why/.test(t)) return "curious";
-  if (/calm|peace|soothing|quiet/.test(t)) return "calm";
-  if (/excited|wow|amazing|love|stunning|incredible/.test(t)) return "excited";
-  if (/inspire|motivated|prompt/.test(t)) return "inspired";
-  if (/happy|joy|smile/.test(t)) return "happy";
-  return "neutral";
-}
-function capitalize(s){ return s ? s[0].toUpperCase()+s.slice(1) : s; }
 
 // Post opens Share Options
 let pendingText = "";
@@ -446,7 +320,7 @@ sendBtn.onclick = ()=>{
   openShareModal();
 };
 
-/* ========= Share Options ========= */
+/* ========= Share Options (name / anonymous) ========= */
 const shareModal = document.getElementById('shareModal');
 const shareClose = document.getElementById('shareClose');
 const btnAnon = document.getElementById('btnAnon');
@@ -469,7 +343,7 @@ function finalizePost(nameOrNull){
 btnAnon.onclick = ()=> finalizePost(null);
 btnWithName.onclick = ()=> finalizePost( (shareName.value||"").trim() || null );
 
-/* ========= Thread (draggable items) ========= */
+/* ========= Thread (loop) ========= */
 const thread = document.getElementById('thread');
 const threadList = document.getElementById('threadList');
 const threadNext = document.getElementById('threadNext');
@@ -488,28 +362,19 @@ function renderThread(){
       <div class="tMeta">@${escapeHtml(item.user)}<small>${escapeHtml(item.age)}</small></div>
       <div class="tText">${escapeHtml(item.text)}</div>
       <div class="tActions">
-        <button class="tBtnLite tLike ${LIKESET.has(item.id)?'hot':''}" data-i="${idx}">👍 <span>${item.likes||0}</span></button>
+        <button class="tBtnLite tLike"  data-i="${idx}">👍 <span>${item.likes}</span></button>
         <button class="tBtnLite tShare" data-i="${idx}">↗︎ Share</button>
       </div>`;
     threadList.appendChild(card);
-    makeDraggable(card); // draggable thread card
   }
 
-  // like toggle (red)
   threadList.querySelectorAll('.tLike').forEach(btn=>{
     btn.onclick = (e)=>{
       const i = Number(e.currentTarget.dataset.i);
-      const item = THREAD[i];
-      const liked = LIKESET.has(item.id);
-      if (liked){ item.likes = Math.max(0,(item.likes||0)-1); LIKESET.delete(item.id); }
-      else { item.likes = (item.likes||0)+1; LIKESET.add(item.id); }
-      persistThread(); saveLikes();
-      btn.classList.toggle('hot');
-      btn.querySelector('span').textContent = item.likes;
+      THREAD[i].likes++; persistThread(); renderThread();
     };
   });
 
-  // share (screenshot + deep-link)
   threadList.querySelectorAll('.tShare').forEach(btn=>{
     btn.onclick = (e)=>{
       const i = Number(e.currentTarget.dataset.i);
@@ -530,7 +395,7 @@ function closeThread(){ thread.style.display='none'; }
 threadNext.onclick = ()=>{ if (THREAD.length){ tIndex = (tIndex + 3) % THREAD.length; renderThread(); } };
 threadClose.onclick = closeThread;
 
-/* ========= Screenshot + share ========= */
+/* ========= Per-comment screenshot + share ========= */
 async function captureAndShare(item, urlForShare){
   try{
     const glCanvas = document.querySelector('canvas.a-canvas');
@@ -542,8 +407,13 @@ async function captureAndShare(item, urlForShare){
     const ctx = out.getContext('2d');
 
     // draw AR scene or gradient
-    if (glCanvas){ ctx.drawImage(glCanvas, 0, 0, baseW, baseH); }
-    else { const g=ctx.createLinearGradient(0,0,0,baseH); g.addColorStop(0,'#ffe1c9'); g.addColorStop(1,'#f7d3e9'); ctx.fillStyle=g; ctx.fillRect(0,0,baseW,baseH); }
+    if (glCanvas){
+      ctx.drawImage(glCanvas, 0, 0, baseW, baseH);
+    } else {
+      const grad = ctx.createLinearGradient(0,0,0,baseH);
+      grad.addColorStop(0,'#ffe1c9'); grad.addColorStop(1,'#f7d3e9');
+      ctx.fillStyle = grad; ctx.fillRect(0,0,baseW,baseH);
+    }
 
     // comment card
     const margin = Math.round(baseW*0.05);
@@ -607,12 +477,15 @@ function drawWrappedText(ctx, text, x, y, maxW, lineH){
   for (let w of words){
     const test = line ? (line + ' ' + w) : w;
     const m = ctx.measureText(test).width;
-    if (m > maxW && line){ ctx.fillText(line, x, yy); line = w; yy += lineH; }
-    else line = test;
+    if (m > maxW && line){
+      ctx.fillText(line, x, yy);
+      line = w; yy += lineH;
+    } else line = test;
   }
   if (line) ctx.fillText(line, x, yy);
 }
 function escapeHtml(s){return (s||"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
 </script>
 </body>
 </html>
